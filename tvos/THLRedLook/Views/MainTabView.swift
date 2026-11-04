@@ -17,7 +17,7 @@ public enum TVAppTab: String, CaseIterable, Identifiable {
         case .feed: return "推荐"
         case .rankings: return "榜单"
         case .search: return "搜索"
-        case .library: return "追剧与历史"
+        case .library: return "我的"
         case .downloads: return "下载"
         case .settings: return "设置"
         }
@@ -29,7 +29,7 @@ public enum TVAppTab: String, CaseIterable, Identifiable {
         case .feed: return "play.rectangle.fill"
         case .rankings: return "chart.bar.fill"
         case .search: return "magnifyingglass"
-        case .library: return "bookmark.fill"
+        case .library: return "person.crop.circle.fill"
         case .downloads: return "arrow.down.circle.fill"
         case .settings: return "gearshape.fill"
         }
@@ -81,6 +81,8 @@ public struct MainTabView: View {
     @State private var deepLinkQuery: String? = nil
     @State private var deepLinkEpisode: Int? = nil
     @State private var testInitialEpisodeIndex: Int = 1
+
+    @State private var visibleAccountRevision: UInt64 = 0
 
     public init() {
         let args = CommandLine.arguments
@@ -300,6 +302,9 @@ public struct MainTabView: View {
                                 focusCategoryTrigger: libraryTabFocusTrigger,
                                 onRequestFocusTopNav: {
                                     requestFocusSidebar()
+                                },
+                                onRequestFocusContent: {
+                                    enterContentArea(for: .library)
                                 }
                             )
                             .padding(.top, 32)
@@ -354,6 +359,13 @@ public struct MainTabView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             if tab == .feed { feedFocusTrigger += 1 }
+        }
+        .onReceive(HongguoAccountModel.shared.$account) { _ in
+            let revision = HongguoAccountVault.shared.snapshot.revision
+            guard revision != visibleAccountRevision else { return }
+            visibleAccountRevision = revision
+            store.clearAccountCatalogCache()
+            Task { await videoFeedViewModel.refresh() }
         }
         .onReceive(lanService.$incomingPlayback) { incoming in
             guard let inc = incoming else { return }
@@ -560,7 +572,7 @@ public struct MainTabView: View {
                 guard !sourceId.isEmpty else { return }
                 let hasActiveHistory = store.history.contains { $0.drama.source.lowercased() == sourceId.lowercased() }
                 let hasActiveFollows = store.followedDramas.contains { $0.source.lowercased() == sourceId.lowercased() }
-                if !hasActiveHistory || !hasActiveFollows {
+                if !CommandLine.arguments.contains("-noLibraryFixtures") && !HongguoAccountModel.shared.loggedIn && (!hasActiveHistory || !hasActiveFollows) && !CommandLine.arguments.contains("-openAccountLogin") {
                     do {
                         let cat = try await NativeRepository.shared.loadCatalog(source: sourceId, page: 1)
                         await MainActor.run {

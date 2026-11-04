@@ -1,7 +1,8 @@
 ﻿param(
     [string]$Apk,
     [string]$Device1Address,
-    [string]$Device2Address
+    [string]$Device2Address,
+    [switch]$SkipDevice2
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -14,7 +15,8 @@ if ($config.devices.Count -ne 2) { throw '安装目标必须包含两台设备�
 if ($Device1Address) { $config.devices[0].address = $Device1Address }
 if ($Device2Address) { $config.devices[1].address = $Device2Address }
 $failures = @()
-foreach ($device in $config.devices) {
+$targets = if ($SkipDevice2) { @($config.devices[0]) } else { $config.devices }
+foreach ($device in $targets) {
     try {
         $address = [string]$device.address
         if ($address -notmatch '^([0-9]{1,3}[.]){3}[0-9]{1,3}:[0-9]{1,5}$') { throw "无效的设备地址：$address" }

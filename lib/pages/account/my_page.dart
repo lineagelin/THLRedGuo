@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
+import 'package:THLRedLook/core/account/hongguo_account_session.dart';
 import 'package:THLRedLook/core/download/download_collections.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/core/store/saved_library.dart';
@@ -12,6 +13,7 @@ import 'package:THLRedLook/pages/downloads/downloads_page.dart';
 import 'package:THLRedLook/pages/player/playback_launch_page.dart';
 import 'package:THLRedLook/pages/settings/settings_page.dart';
 import 'package:THLRedLook/views/common/widgets.dart';
+import 'account_page.dart';
 
 class MyPage extends StatefulWidget {
   const MyPage({
@@ -137,6 +139,35 @@ class _MyPageState extends State<MyPage> {
     );
   }
 
+  void _openAccount() {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('红果账号'), centerTitle: true),
+          body: AccountScreen(
+            repository: widget.repository,
+            store: widget.store,
+            onOpen: _openDrama,
+            localLibraryBuilder: (history) => SavedLibrary(
+              repository: widget.repository,
+              store: widget.store,
+              history: history,
+              allSources: true,
+              onOpen: _openDrama,
+              onContinue: _openDrama,
+              onDownload:
+                  widget.store.canDownload &&
+                      widget.repository.supportsDownloads
+                  ? (drama) => _openDrama(drama, download: true)
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _section({
     required String id,
     required String title,
@@ -236,7 +267,7 @@ class _MyPageState extends State<MyPage> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.store,
+    animation: Listenable.merge([widget.store, HongguoAccountSession.shared]),
     builder: (context, _) {
       final favorites = widget.store.favorites;
       final history = widget.store.history;
@@ -284,6 +315,27 @@ class _MyPageState extends State<MyPage> {
                     ],
                   ),
                 const SizedBox(height: 20),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: ListTile(
+                    key: const ValueKey('my-official-account'),
+                    leading: const Icon(Icons.account_circle_outlined),
+                    title: Text(
+                      HongguoAccountSession.shared.loggedIn
+                          ? HongguoAccountSession.shared.nickname.isNotEmpty
+                                ? HongguoAccountSession.shared.nickname
+                                : '红果账号'
+                          : '红果账号',
+                    ),
+                    subtitle: Text(
+                      HongguoAccountSession.shared.loggedIn
+                          ? '查看账号追剧、观看记录与续播进度'
+                          : '登录后同步官方追剧与观看记录',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _openAccount,
+                  ),
+                ),
                 Card(
                   margin: const EdgeInsets.only(bottom: 16),
                   child: ListTile(

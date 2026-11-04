@@ -16,6 +16,7 @@ import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/core/store/saved_library.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/pages/account/my_page.dart';
+import 'package:THLRedLook/pages/account/account_page.dart';
 import 'package:THLRedLook/pages/downloads/downloads_page.dart';
 import 'package:THLRedLook/pages/home/home_page.dart';
 import 'package:THLRedLook/utils/theme/app_theme.dart';
@@ -211,6 +212,13 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('my-official-account')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('my-official-account')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen), findsOneWidget);
+      expect(find.byKey(const Key('hongguo-account-login')), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       for (final section in ['favorites', 'history', 'downloads']) {
         expect(find.byKey(ValueKey('my-$section-hongguo:5')), findsOneWidget);

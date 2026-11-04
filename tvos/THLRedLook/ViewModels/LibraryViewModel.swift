@@ -21,6 +21,30 @@ public final class LibraryViewModel: ObservableObject {
         }
     }
 
+    @Published private(set) var accountLists: [LibraryTab: [WatchEntry]] = [:]
+    @Published private(set) var accountErrors: [LibraryTab: String] = [:]
+    @Published private(set) var loadingTabs: Set<LibraryTab> = []
+    private var accountRevision: UInt64?
+
+    func loadAccount(_ tab: LibraryTab, refresh: Bool = false) async {
+        let revision = HongguoAccountVault.shared.snapshot.revision
+        if revision != accountRevision {
+            accountRevision = revision; accountLists = [:]; accountErrors = [:]; loadingTabs = []
+        }
+        guard HongguoAccountModel.shared.loggedIn, !loadingTabs.contains(tab), refresh || accountLists[tab] == nil else { return }
+        loadingTabs.insert(tab); accountErrors[tab] = nil
+        defer { if accountRevision == revision { loadingTabs.remove(tab) } }
+        do {
+            let entries = try await HongguoAccountModel.shared.library(history: tab == .history)
+            guard accountRevision == revision, HongguoAccountVault.shared.snapshot.revision == revision else { return }
+            accountLists[tab] = entries
+        } catch {
+            NSLog("[AccountLibrary] error=%@", (error as? HongguoAccountError)?.localizedDescription ?? "network")
+            guard accountRevision == revision, HongguoAccountVault.shared.snapshot.revision == revision else { return }
+            accountErrors[tab] = "账号列表获取失败，请重试"
+        }
+    }
+
     private let store: LocalStore
     private var cancellables = Set<AnyCancellable>()
 
@@ -65,6 +89,10 @@ public final class LibraryViewModel: ObservableObject {
     public func removeHistory(dramaId: String) {
         store.removeHistory(dramaId: dramaId)
     }
+
+    public func removeFollow(dramaId: String) {
+        store.removeFollow(dramaId: dramaId)
+    }
 }
 
 @MainActor
@@ -83,13 +111,14 @@ public final class DownloadsViewModel: ObservableObject {
 
     public var currentSource: String {
         let src = !JSSourceService.shared.activeSourceId.isEmpty ? JSSourceService.shared.activeSourceId : LocalStore.shared.currentSourceId
-        return src
+        return src.isEmpty ? "hongguo" : src
     }
 
     public var jobs: [DownloadJob] {
-        guard !currentSource.isEmpty else { return [] }
         let target = currentSource.lowercased()
-        return downloadService.jobs.filter { $0.drama.source.lowercased() == target }
+        return downloadService.jobs.filter {
+            $0.drama.source.isEmpty || $0.drama.source.lowercased() == target
+        }
     }
 
     public func pauseJob(_ id: String) {

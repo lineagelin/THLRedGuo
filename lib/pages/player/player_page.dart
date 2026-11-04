@@ -1,5 +1,6 @@
 import 'package:THLRedLook/utils/screen/screen_wake_controller.dart';
 import 'dart:async';
+import '../../core/account/hongguo_account_session.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -168,6 +169,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showControlsOnPlaybackReady = true;
   bool _pendingError = false;
   bool _requireRecovery = false;
+  bool _encryptedVideoOutputFailed = false;
   bool _pictureInPictureSupported = false;
   bool _pictureInPictureActive = false;
   bool _pictureInPictureRequested = false;
@@ -337,7 +339,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               '[Play] 原生播放错误: 剧=${widget.detail.drama.cleanSourceId}, 集=${widget.detail.episodes[_index].number}, ${playbackFailureSummary(AppFailure(error, code: 'native_stream'))}',
             );
           }
-          _queueRecovery(force: PlaybackRecovery.audioOutputFailed(error));
+          final videoOutputFailed = PlaybackRecovery.videoOutputFailed(error);
+          if (Platform.isAndroid && videoOutputFailed) {
+            _encryptedVideoOutputFailed = true;
+          }
+          _queueRecovery(
+            force:
+                videoOutputFailed || PlaybackRecovery.audioOutputFailed(error),
+          );
         }
       }),
     );
@@ -1375,8 +1384,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     _syncDanmaku();
   }
 
+  final int _watchAccountRevision = HongguoAccountSession.shared.revision;
+
   Future<void> _saveProgress({bool flush = false}) async {
-    if (_openedIndex < 0 || widget.store.profileEpoch != _profileEpoch) {
+    if (_openedIndex < 0 ||
+        widget.store.profileEpoch != _profileEpoch ||
+        _watchAccountRevision != HongguoAccountSession.shared.revision) {
       return;
     }
     final duration = _player.state.duration.inMilliseconds / 1000;
@@ -1384,9 +1397,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     final position = completed
         ? duration
         : _player.state.position.inMilliseconds / 1000;
+    final canSaveZero =
+        flush &&
+        (_savedProgressKey?.startsWith(
+              '${widget.mediaId ?? widget.detail.drama.id}:$_openedIndex:',
+            ) ??
+            false);
     if (!position.isFinite ||
         !duration.isFinite ||
-        position < .1 ||
+        (position < .1 && !canSaveZero) ||
         duration <= 0) {
       return;
     }
@@ -1407,7 +1426,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         widget.detail.episodes[_openedIndex].number >= knownEpisodes;
     final progressKey =
         '${widget.mediaId ?? widget.detail.drama.id}:$_openedIndex:$position:$duration:$completedDrama';
-    if (_savedProgressKey == progressKey && _saveWarning == null) {
+    if (_savedProgressKey == progressKey &&
+        _saveWarning == null &&
+        (!flush || !store.usesAccountLibrary(widget.detail.drama.id))) {
       if (flush && widget.mediaId == null) LanController.current?.flush();
       return;
     }
@@ -1418,11 +1439,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       duration: duration,
       updatedAt: DateTime.now(),
     );
+    final itemId =
+        ((_plan?.danmakuId.isNotEmpty ?? false)
+                ? _plan!.danmakuId
+                : widget.detail.episodes[_openedIndex].id)
+            .split(':')
+            .last;
     try {
       await Future<void>.value();
       if (store.profileEpoch != _profileEpoch) return;
       if (widget.mediaId == null) {
-        await store.saveWatch(entry, completedDrama: completedDrama);
+        await store.saveWatch(
+          entry,
+          itemId: itemId,
+          force: flush,
+          completedDrama: completedDrama,
+        );
         if (flush) LanController.current?.flush();
       } else {
         await store.saveMediaWatch(widget.mediaId!, entry);
@@ -1431,9 +1463,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted && !_closed && _saveWarning != null) {
         setState(() => _saveWarning = null);
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted && !_closed && _saveWarning == null) {
-        setState(() => _saveWarning = '观看进度尚未保存，请检查存储空间后重试。');
+        setState(
+          () => _saveWarning = error is HongguoAccountFailure
+              ? '账号观看进度尚未同步，请检查网络后重试。'
+              : '观看进度尚未保存，请检查存储空间后重试。',
+        );
       }
     }
   }
@@ -1475,9 +1511,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     if (index != _index) _forceOnline = false;
     final forceEncryptedCache =
-        recoveryAction != null &&
-        (_recovery.cacheAttempted ||
-            (_plan?.decryptionKey.isNotEmpty ?? false));
+        _encryptedVideoOutputFailed ||
+        (recoveryAction != null &&
+            (_recovery.cacheAttempted ||
+                (_plan?.decryptionKey.isNotEmpty ?? false)));
     final warmed =
         handoffPlan ??
         (recoveryAction == null && _preloadEnabled && !widget.localOnly
@@ -1489,7 +1526,6 @@ class _PlayerScreenState extends State<PlayerScreen>
               )
             : null);
     final ticket = ++_generation;
-    unawaited(_encryptedPlayback.cancel());
     _enhancement.suspend();
     _seekSequence++;
     _danmaku.setPlan(null);
@@ -1550,6 +1586,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (!isSeamlessAdvance) {
           await _player.stop();
         }
+        await _encryptedPlayback.cancel();
         final previous = _plan ?? recoveryPlan;
         _plan = null;
         if (recoveryAction == PlaybackRecoveryAction.alternative ||
@@ -1614,7 +1651,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           throw AppFailure('站源未返回播放地址，请重试');
         }
         final platform = _player.platform;
-        if (platform is NativePlayer) {
+        if (_player is! LunaExoPlayer && platform is NativePlayer) {
           if (Platform.isAndroid) {
             if (_television) {
               await platform.setProperty('hwdec', 'mediacodec');
@@ -2530,6 +2567,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     return PopScope(
       canPop: _television || pictureInPicture || !fullscreen,
       onPopInvokedWithResult: (didPop, result) {
+        if (didPop && widget.store.usesAccountLibrary(widget.detail.drama.id)) {
+          unawaited(_saveProgress(flush: true));
+        }
         if (!didPop && fullscreen && !_television && !pictureInPicture) {
           _rotate();
         } else if (!didPop && pictureInPicture) {

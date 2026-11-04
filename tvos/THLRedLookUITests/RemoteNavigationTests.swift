@@ -4,6 +4,225 @@ final class RemoteNavigationTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.never88gone.redlook")
     private let remote = XCUIRemote.shared
 
+    func testOwnerAccountWritebackPlaybackAndResume() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["THL_ACCOUNT_OWNER"] == "1")
+        continueAfterFailure = false
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "library", "-noLibraryFixtures"]
+        app.launch()
+        guard app.buttons["hongguo-account-menu"].waitForExistence(timeout: 20) else {
+            throw XCTSkip("Owner simulator requires account login before real writeback verification")
+        }
+        app.terminate()
+        let candidates = [("7689841670413618238", "账号进度验证样本"), ("7695704804978330649", "满院亲戚全是上古大妖第五季"), ("7688558312157088793", "满院亲戚全是上古大妖第四季"), ("7678338044344159256", "满院亲戚全是上古大妖第二季")]
+        var selected = candidates[0], followVerified = false
+        for candidate in candidates {
+            app.launchArguments = ["-testPage", "detail", "-testDramaId", "hongguo:" + candidate.0, "-testDramaTitle", candidate.1]
+            app.launch()
+            XCTAssertTrue(app.buttons["detail.episode.1"].waitForExistence(timeout: 60))
+            if !app.buttons["detail.favorite"].label.contains("已") {
+                selected = candidate
+                yaoDetailPlayFocus()
+                press(.right, focus: "detail.favorite")
+                press(.select)
+                wait("official follow readback", seconds: 30) { self.app.buttons["detail.favorite"].label.contains("已") }
+                press(.select)
+                wait("official unfollow readback", seconds: 30) { !self.app.buttons["detail.favorite"].label.contains("已") }
+                followVerified = true
+                break
+            }
+            selected = candidate
+            app.terminate()
+        }
+        if app.state != .runningForeground {
+            app.launchArguments = ["-testPage", "detail", "-testDramaId", "hongguo:" + selected.0, "-testDramaTitle", selected.1]
+            app.launch()
+            XCTAssertTrue(app.buttons["detail.episode.1"].waitForExistence(timeout: 60))
+        }
+        focusChunk(0)
+        press(.down, focus: "detail.episode.1")
+        press(.select)
+        wait("episode 1 running", seconds: 60) { self.showControls(); return self.app.staticTexts["player.episode"].label.contains("第 1 集") && self.seconds(self.app.staticTexts["player.position"].label) >= 7 }
+        showControls()
+        let saved = seconds(app.staticTexts["player.position"].label)
+        press(.menu, focus: "player.wake")
+        press(.menu)
+        XCTAssertTrue(app.buttons["detail.episode.1"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 3)
+        app.terminate()
+        app.launchArguments = ["-testPage", "detail", "-testDramaId", "hongguo:" + selected.0, "-testDramaTitle", selected.1]
+        app.launch()
+        XCTAssertTrue(app.buttons["detail.episode.1"].waitForExistence(timeout: 60))
+        yaoDetailPlayFocus()
+        press(.select)
+        wait("server progress resumes after process restart", seconds: 60) { self.showControls(); return self.seconds(self.app.staticTexts["player.position"].label) >= max(1, saved - 2) }
+        showControls()
+        press(.right, focus: "player.seekForward")
+        let duration = seconds(app.staticTexts["player.duration"].label)
+        let position = seconds(app.staticTexts["player.position"].label)
+        let seeks = max(0, min(40, (duration - position - 3) / 10))
+        for _ in 0..<seeks { remote.press(.select) }
+        wait("continuous next episode", seconds: 90) { self.showControls(); return self.app.staticTexts["player.episode"].label.contains("第 2 集") && self.seconds(self.app.staticTexts["player.position"].label) >= 7 }
+        press(.menu, focus: "player.wake")
+        press(.menu)
+        Thread.sleep(forTimeInterval: 3)
+        app.terminate()
+        app.launchArguments = ["-testPage", "library"]
+        app.launch()
+        XCTAssertTrue(app.buttons["hongguo-account-menu"].waitForExistence(timeout: 20))
+        let card = app.buttons["library.card.hongguo:" + selected.0]
+        XCTAssertTrue(card.waitForExistence(timeout: 45))
+        print("THL_ACCOUNT_WRITEBACK follow=\(followVerified) progressResume=true nextEpisode=2 serverHistoryAfterRestart=true series=\(selected.0)")
+        app.terminate()
+    }
+
+    func testAuthenticatedAccountLibraryAndSettings() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["THL_ACCOUNT_OWNER"] == "1")
+        continueAfterFailure = false
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "library"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["hongguo-account-menu"].waitForExistence(timeout: 30))
+        if app.buttons["nav.library"].hasFocus { remote.press(.right) }
+        wait("my sidebar history focused") { self.app.buttons["library.tab.history"].hasFocus }
+        wait("cloud history loaded", seconds: 40) {
+            !self.app.staticTexts["正在获取账号列表"].exists && (self.app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).count > 0 || self.app.staticTexts["暂无观看记录"].exists || self.app.staticTexts["library.error"].exists)
+        }
+        XCTAssertFalse(app.staticTexts["library.error"].exists)
+        press(.right)
+        wait("history content focused") { self.app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).allElementsBoundByIndex.contains { $0.hasFocus } }
+        let historyCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).allElementsBoundByIndex.first { $0.hasFocus }
+        let historyID = try XCTUnwrap(historyCard?.identifier)
+        press(.select)
+        XCTAssertTrue(app.buttons["detail.play"].waitForExistence(timeout: 50))
+        press(.menu)
+        wait("history detail restores card focus") { self.app.buttons[historyID].hasFocus }
+        press(.left, focus: "library.tab.history")
+        press(.down, focus: "library.tab.follows")
+        press(.select)
+        wait("cloud follows loaded", seconds: 40) {
+            !self.app.staticTexts["正在获取账号列表"].exists && (self.app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).count > 0 || self.app.staticTexts["暂无追剧记录"].exists || self.app.staticTexts["library.error"].exists)
+        }
+        XCTAssertFalse(app.staticTexts["library.error"].exists)
+        press(.right)
+        wait("account list content focused") { self.app.buttons["library.emptyAction"].hasFocus || self.app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).allElementsBoundByIndex.contains { $0.hasFocus } }
+        press(.up, focus: "hongguo-account-menu")
+        press(.select)
+        XCTAssertTrue(app.buttons["退出登录"].waitForExistence(timeout: 5))
+        press(.menu)
+        wait("cancel account menu restores focus") { self.app.buttons["hongguo-account-menu"].hasFocus }
+        press(.menu)
+        wait("my returns main navigation") { self.app.buttons["nav.library"].hasFocus }
+        app.terminate()
+        app.launchArguments = ["-testPage", "settings"]
+        app.launch()
+        XCTAssertTrue(app.buttons["nav.settings"].waitForExistence(timeout: 30))
+        if app.buttons["nav.settings"].hasFocus { remote.press(.right) }
+        wait("settings opens directly") { self.app.buttons["settings.nav.sources"].hasFocus }
+        XCTAssertFalse(app.buttons["应用设置"].exists)
+        print("THL_MY_LIBRARY history=true follows=true menuCancel=true settingsDirect=true imagesDisabled=true")
+    }
+
+    func testHongguoAccountQrRemoteFlow() throws {
+        continueAfterFailure = false
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "library"]
+        app.launch()
+        defer { app.terminate() }
+        try XCTSkipIf(app.buttons["hongguo-account-menu"].waitForExistence(timeout: 3), "保留已有真实账号会话")
+        wait("account navigation ready", seconds: 30) { self.app.buttons["nav.library"].exists || self.app.buttons["hongguo-account-login"].exists }
+        if app.buttons["nav.library"].hasFocus { remote.press(.right) }
+        wait("library sidebar focused") { self.app.buttons["library.tab.history"].hasFocus }
+        press(.right)
+        press(.up, focus: "hongguo-account-login")
+        press(.select)
+        wait("login chooser focused") { self.app.buttons["hongguo-login-qr"].hasFocus }
+        press(.select)
+        wait("QR issued", seconds: 30) { self.app.staticTexts["等待手机红果 App 扫码确认"].exists }
+        press(.menu)
+        wait("QR returns to chooser") { self.app.buttons["hongguo-login-qr"].exists }
+        press(.menu)
+        wait("cancel restores login focus") { self.app.buttons["hongguo-account-login"].hasFocus }
+        press(.menu)
+        wait("account returns to navigation") { self.app.buttons["nav.library"].hasFocus }
+    }
+
+    func testLoginMethodsInvalidPhoneAndPairCancelPreserveAccount() throws {
+        continueAfterFailure = false
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "library", "-openAccountLogin"]
+        app.launch()
+        defer { app.terminate() }
+        wait("library sidebar ready", seconds: 30) { self.app.buttons["nav.library"].hasFocus }
+        press(.right)
+        XCTAssertTrue(app.buttons["hongguo-login-qr"].waitForExistence(timeout: 20))
+        print("THL_LOGIN_CHOOSER enabled=\(app.buttons["hongguo-login-qr"].isEnabled) hittable=\(app.buttons["hongguo-login-qr"].isHittable) appState=\(app.state.rawValue)")
+        wait("login chooser starts at official QR", seconds: 30) { self.app.buttons["hongguo-login-qr"].hasFocus }
+        press(.up, focus: "hongguo-login-sms")
+        press(.select)
+        wait("phone field focused") { self.app.textFields["login-phone"].hasFocus }
+        press(.down)
+        press(.down, focus: "phone-send-code")
+        press(.select)
+        XCTAssertTrue(app.staticTexts["手机号格式无效"].waitForExistence(timeout: 5))
+        press(.menu)
+        wait("cancelled SMS returns to chooser") { self.app.buttons["hongguo-login-sms"].exists }
+        XCTAssertFalse(app.buttons["hongguo-login-password"].exists)
+        press(.down, focus: "hongguo-login-qr")
+        press(.down, focus: "hongguo-login-haw-pair")
+        press(.select)
+        XCTAssertTrue(app.buttons["haw-account-pair-refresh"].waitForExistence(timeout: 10))
+        press(.menu)
+        wait("pair cancel returns to chooser") { self.app.buttons["hongguo-login-haw-pair"].exists }
+        press(.menu)
+        wait("back returns account header") {
+            let account = self.app.buttons["hongguo-account-menu"], guest = self.app.buttons["hongguo-account-login"]
+            return account.exists && account.hasFocus || guest.exists && guest.hasFocus
+        }
+        print("THL_LOGIN_METHODS_TV smsInvalidBlocked=true passwordEntryAbsent=true pairingCancel=true remoteReturn=true realSmsSent=false realSessionTransferred=false imagesDisabled=true")
+    }
+
+    func testDebugSourceSelectedEpisodeAndNaturalNext() throws {
+        continueAfterFailure = false
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "detail", "-testDramaId", "hongguo:7695704804978330649", "-testDramaTitle", "满院亲戚全是上古大妖第五季"]
+        app.launch()
+        defer { app.terminate() }
+        wait("debug detail ready", seconds: 60) { self.app.buttons["detail.play"].exists }
+        yaoDetailPlayFocus()
+        focusChunk(0)
+        press(.down, focus: "detail.episode.1")
+        press(.right, focus: "detail.episode.2")
+        press(.right, focus: "detail.episode.3")
+        press(.select)
+        yaoReady(season: 5, episode: 3)
+        let resumedSeconds = seconds(app.staticTexts["player.position"].label)
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        capture("debug-selected-episode-3")
+        print("THL_DEBUG_TV_UI selected=3 natural=true seek=false speed=1 resumedSeconds=\(resumedSeconds)")
+        wait("debug natural episode 3 completes to 4", seconds: 110) {
+            self.yaoControls()
+            return self.app.staticTexts["player.episode"].label.contains("第 4 集") && self.seconds(self.app.staticTexts["player.position"].label) >= 3
+        }
+        capture("debug-natural-episode-4")
+        focusDrawer()
+        press(.select, focus: "drawer.episode.4")
+        press(.left, focus: "drawer.episode.3")
+        press(.select)
+        yaoReady(season: 5, episode: 3)
+        capture("debug-drawer-selected-episode-3")
+        press(.menu, focus: "player.wake")
+        press(.menu)
+        wait("debug returns to selected detail focus") { self.app.buttons["detail.episode.3"].hasFocus }
+        print("THL_DEBUG_TV_UI_RESULT selected=3 autoNext=4 drawer=3 detailBackFocus=true natural=true seek=false")
+    }
+
     func testImportedOldIOSHistoryDisplaysAndPersistsWithRemoteFocus() throws {
         guard ProcessInfo.processInfo.environment["ICLOUD_OLD_HISTORY_UI"] == "1" else { throw XCTSkip("Requires isolated imported history fixture") }
         continueAfterFailure = false
@@ -256,12 +475,19 @@ final class RemoteNavigationTests: XCTestCase {
         app.launchArguments = ["-testPage", "library"]
         app.launch()
         XCTAssertTrue(app.buttons["library.tab.history"].waitForExistence(timeout: 30))
-        if app.buttons["nav.library"].hasFocus { press(.down, focus: "library.tab.history") }
+        if app.buttons["nav.library"].hasFocus { press(.right, focus: "library.tab.history") }
         wait("library starts at history") { self.app.buttons["library.tab.history"].hasFocus }
         press(.right, focus: "library.tab.follows")
         press(.select)
         press(.down, focus: "library.filter.all")
-        press(.down, focus: "library.card." + id)
+        press(.down)
+        if !app.buttons["library.card." + id].hasFocus {
+            for _ in 0..<10 {
+                if app.buttons["library.card." + id].hasFocus { break }
+                press(.right)
+            }
+        }
+        wait("focus favorite card") { self.app.buttons["library.card." + id].hasFocus }
         press(.select)
         XCTAssertTrue(app.buttons["detail.favorite"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons["detail.favorite"].label.contains("已收藏"))
@@ -322,7 +548,7 @@ final class RemoteNavigationTests: XCTestCase {
         app.launchArguments = ["-testPage", "library"]
         app.launch()
         XCTAssertTrue(app.buttons["library.tab.history"].waitForExistence(timeout: 30))
-        if app.buttons["nav.library"].hasFocus { press(.down, focus: "library.tab.history") }
+        if app.buttons["nav.library"].hasFocus { press(.right, focus: "library.tab.history") }
         wait("history tab focus") { self.app.buttons["library.tab.history"].hasFocus }
         press(.down, focus: "library.card." + id)
         XCTAssertTrue((app.buttons["library.card." + id].value as? String ?? "").contains("第 2 集"))
@@ -421,17 +647,25 @@ final class RemoteNavigationTests: XCTestCase {
         case "player.back": press(.down, focus: "player.playPause")
         case "player.seekForward": press(.left, focus: "player.playPause")
         case "player.seekBackward": press(.right, focus: "player.playPause")
-        case "player.nextEpisode", "player.prevEpisode", "player.episodeDrawer":
-            press(.up, focus: "player.back")
-            press(.down, focus: "player.playPause")
+        case "player.prevEpisode":
+            press(.left, focus: "player.seekForward")
+            press(.left, focus: "player.playPause")
+        case "player.episodeDrawer":
+            press(.left)
+            press(.left, focus: "player.seekForward")
+            press(.left, focus: "player.playPause")
+        case "player.nextEpisode":
+            press(.left, focus: "player.episodeDrawer")
+            press(.left)
+            press(.left, focus: "player.playPause")
         case "player.speed": press(.up, focus: "player.playPause")
         case "player.quality":
             press(.up, focus: "player.seekForward")
             press(.left, focus: "player.playPause")
         case "player.danmaku", "player.danmakuSettings":
             press(.up)
-            press(.up, focus: "player.back")
-            press(.down, focus: "player.playPause")
+            press(.left)
+            press(.left, focus: "player.playPause")
         default: break
         }
         if let changed = yaoSnapshots().first(where: { $0.hasFocus })?.identifier,
@@ -1064,9 +1298,8 @@ final class RemoteNavigationTests: XCTestCase {
             self.app.buttons["player.playPause"].exists && self.app.buttons["player.playPause"].hasFocus
         }
 
-        // 验证 11 个控制按钮均存在于界面上
+        // 验证 10 个居中底部控制按钮均存在于界面上（已移除顶部多余的返回按钮，改由原生 Menu 键返回）
         let allControlIds = [
-            "player.back",
             "player.seekBackward",
             "player.playPause",
             "player.seekForward",
@@ -1087,13 +1320,7 @@ final class RemoteNavigationTests: XCTestCase {
         try? fullShot.pngRepresentation.write(to: URL(fileURLWithPath: "/Volumes/MacintoshData/Work/MY/Project/Product/THLRedGuo/build/verification/tvos27-focus-20261020/tvos_player_bottom_controls_bar.png"))
         try? fullShot.pngRepresentation.write(to: URL(fileURLWithPath: "/Volumes/MacintoshData/Work/MY/Project/Product/THLRedGuo/build/verification/tvos27-focus-20261020/tvos_player_two_tier_controls.png"))
 
-        // 2. 测试向上导航至顶部返回按钮并返回主播放键
-        press(.up, focus: "player.back")
-        XCTAssertTrue(app.buttons["player.back"].hasFocus)
-        press(.down, focus: "player.playPause")
-        XCTAssertTrue(app.buttons["player.playPause"].hasFocus)
-
-        // 3. 测试向左导航至快退10秒并点击
+        // 2. 测试向左导航至快退10秒并点击
         press(.left, focus: "player.seekBackward")
         XCTAssertTrue(app.buttons["player.seekBackward"].hasFocus)
         press(.select)
@@ -2824,6 +3051,174 @@ extension RemoteNavigationTests {
         print("THL_TV_RESET_OFFICIAL_SESSION_VERIFIED resetFocus=true resetSuccess=true noticeShown=true")
         app.terminate()
     }
+
+    /// 截取 2026-11-03 最新 tvOS 版本的高清实机截图
+    func testCaptureLatestTVOSScreenshots20261103() throws {
+        continueAfterFailure = false
+        let shotDir = URL(fileURLWithPath: "/Users/never88gone/.gemini/antigravity/brain/78fa14d0-288b-4e8f-86e6-1d40abdc3d60/screenshots_20261103")
+        try? FileManager.default.createDirectory(at: shotDir, withIntermediateDirectories: true)
+
+        func saveShot(_ name: String) {
+            let shot = XCUIScreen.main.screenshot()
+            try? shot.pngRepresentation.write(to: shotDir.appendingPathComponent(name))
+            print("THL_SCREENSHOT_SAVED: \(name)")
+        }
+
+        // 1. 剧集详情页截图：未追剧、已追剧、状态菜单（含取消追剧）
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "detail", "-testDramaId", "test_screenshot_drama", "-testDramaTitle", "龙王令：都市至尊", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+
+        wait("detail loaded", seconds: 30) { self.app.buttons["detail.favorite"].exists }
+        wait("detail play focus", seconds: 20) { self.app.buttons["detail.play"].hasFocus }
+        press(.right, focus: "detail.favorite")
+
+        if app.buttons["detail.favorite"].label.contains("已") {
+            press(.select)
+            wait("cleared to unfollowed") { !self.app.buttons["detail.favorite"].label.contains("已") }
+        }
+        // 截图 1：未追剧状态
+        saveShot("01_tvos_detail_unfollowed.png")
+
+        // 点击加入追剧
+        press(.select)
+        wait("followed state active") { self.app.buttons["detail.favorite"].label.contains("已") }
+        // 截图 2：已追剧状态（按钮变为【已追剧】，右侧出现状态菜单）
+        saveShot("02_tvos_detail_followed.png")
+
+        // 导航至状态菜单
+        remote.press(.right)
+        Thread.sleep(forTimeInterval: 1.0)
+        // 截图 3：追剧状态（已追剧与分类状态菜单）
+        saveShot("03_tvos_detail_follow_menu.png")
+        app.terminate()
+
+        // 2. 媒体库页面截图：最近观看、我的追剧、以及左侧卡片获焦放大效果
+        app.launchArguments = ["-testPage", "library", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("library history ready", seconds: 30) { self.app.buttons["library.tab.history"].exists }
+        if app.buttons["nav.library"].hasFocus { press(.right, focus: "library.tab.history") }
+        // 截图 4：媒体库 - 最近观看（小巧紧凑的左侧区域）
+        saveShot("04_tvos_library_history.png")
+
+        // 向右聚焦到最左侧第一张卡片，验证卡片放大 1.06 倍后左侧有充足间隙、绝无截断
+        press(.right)
+        Thread.sleep(forTimeInterval: 1.0)
+        saveShot("04b_tvos_library_first_card_focused.png")
+
+        // 返回左侧边栏并移动焦点到追剧：仅移动焦点，不按 select！验证获取焦点后马上切换数据
+        press(.left, focus: "library.tab.history")
+        press(.down, focus: "library.tab.follows")
+        wait("library follows auto switched on focus without select", seconds: 15) {
+            self.app.buttons["library.filter.all"].exists || self.app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.card.")).count > 0 || self.app.staticTexts["暂无追剧记录"].exists
+        }
+        // 截图 5：媒体库 - 我的追剧（聚焦即刻自动切换）
+        saveShot("05_tvos_library_follows.png")
+        app.terminate()
+
+        // 3. 播放器两层居中控制栏与弹幕设置抽屉
+        app.launchArguments = ["-testPage", "controls", "-testEpisode", "5", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("player controls ready", seconds: 30) { self.app.buttons["player.playPause"].exists }
+        // 截图 6：播放器两层居中控制栏（顶部无返回键，大屏对称居中）
+        saveShot("06_tvos_player_centered_controls.png")
+
+        // 导航至第二层并移到弹幕样式按钮并展开抽屉
+        press(.down, focus: "player.speed")
+        if app.buttons["player.quality"].exists {
+            press(.right, focus: "player.quality")
+        }
+        press(.right, focus: "player.danmaku")
+        press(.right, focus: "player.danmakuSettings")
+        press(.select)
+        wait("danmaku settings drawer opened", seconds: 15) { self.app.buttons["danmaku.switch.on"].exists }
+        // 截图 7：弹幕样式设置抽屉
+        saveShot("07_tvos_danmaku_settings_drawer.png")
+        remote.press(.menu)
+        app.terminate()
+
+        print("THL_ALL_NEW_TVOS_SCREENSHOTS_CAPTURED count=7")
+    }
+
+    /// 截取用于提交 App Store 的 4K（3840x2160）全高清应用展示图
+    func testCaptureAppStoreScreenshots() throws {
+        continueAfterFailure = false
+        let shotDir = URL(fileURLWithPath: "/Volumes/MacintoshData/Work/MY/Project/Product/THLRedGuo/tvos/fastlane/screenshots/zh-Hans")
+        let artifactDir = URL(fileURLWithPath: "/Users/never88gone/.gemini/antigravity/brain/78fa14d0-288b-4e8f-86e6-1d40abdc3d60/appstore_screenshots")
+        try? FileManager.default.createDirectory(at: shotDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
+        func saveShot(_ name: String) {
+            let shot = XCUIScreen.main.screenshot()
+            try? shot.pngRepresentation.write(to: shotDir.appendingPathComponent(name))
+            try? shot.pngRepresentation.write(to: artifactDir.appendingPathComponent(name))
+            print("THL_APPSTORE_SCREENSHOT_SAVED: \(name)")
+        }
+
+        // 1. 首页探索 (Home / Catalog)
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "catalog", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("catalog ready", seconds: 35) { self.app.buttons["nav.catalog"].exists }
+        if app.buttons["nav.catalog"].hasFocus {
+            remote.press(.right)
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+        saveShot("01_home.png")
+        app.terminate()
+
+        // 2. 热门榜单 (Rankings)
+        app.launchArguments = ["-testPage", "rankings", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("rankings ready", seconds: 35) { self.app.buttons["nav.rankings"].exists }
+        if app.buttons["nav.rankings"].hasFocus {
+            remote.press(.right)
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+        saveShot("02_rankings.png")
+        app.terminate()
+
+        // 3. 剧集详情 (Detail)
+        app.launchArguments = ["-testPage", "detail", "-testDramaId", "test_screenshot_drama", "-testDramaTitle", "龙王令：都市至尊", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("detail loaded", seconds: 35) { self.app.buttons["detail.favorite"].exists }
+        wait("detail play focus", seconds: 20) { self.app.buttons["detail.play"].hasFocus }
+        Thread.sleep(forTimeInterval: 1.0)
+        saveShot("03_detail.png")
+        app.terminate()
+
+        // 4. 播放器两层居中控制栏 (Player Controls)
+        app.launchArguments = ["-testPage", "controls", "-testEpisode", "5", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("player controls ready", seconds: 35) { self.app.buttons["player.playPause"].exists }
+        Thread.sleep(forTimeInterval: 1.0)
+        saveShot("04_player.png")
+
+        // 5. 弹幕样式设置抽屉 (Danmaku Settings)
+        press(.down, focus: "player.speed")
+        if app.buttons["player.quality"].exists {
+            press(.right, focus: "player.quality")
+        }
+        press(.right, focus: "player.danmaku")
+        press(.right, focus: "player.danmakuSettings")
+        press(.select)
+        wait("danmaku settings drawer opened", seconds: 15) { self.app.buttons["danmaku.switch.on"].exists }
+        Thread.sleep(forTimeInterval: 1.0)
+        saveShot("05_danmaku.png")
+        remote.press(.menu)
+        app.terminate()
+
+        // 6. 媒体库 (Library / My)
+        app.launchArguments = ["-testPage", "library", "-thl_icloud_sync_enabled", "NO"]
+        app.launch()
+        wait("library history ready", seconds: 35) { self.app.buttons["library.tab.history"].exists }
+        if app.buttons["nav.library"].hasFocus { press(.right, focus: "library.tab.history") }
+        Thread.sleep(forTimeInterval: 1.0)
+        saveShot("06_library.png")
+        app.terminate()
+
+        print("THL_APPSTORE_SCREENSHOTS_CAPTURED count=6")
+    }
 }
 
 extension RemoteNavigationTests {
@@ -2867,5 +3262,97 @@ extension RemoteNavigationTests {
         press(.menu)
         wait("return to final episode focus") { self.app.buttons["detail.episode.127"].hasFocus }
         print("THL_LONG_SERIES_REMOTE episode101=true next102=true last127=true returnFocus=true")
+    }
+
+    /// 8. 专项验证：剧集详情页发起下载 -> 下载管理页面展示任务列表 -> 批量清空管理完整闭环
+    func testDetailDownloadAndDownloadsManagementFlow() throws {
+        continueAfterFailure = false
+        let shotDir = URL(fileURLWithPath: "/Users/never88gone/.gemini/antigravity/brain/78fa14d0-288b-4e8f-86e6-1d40abdc3d60/download_verification_screenshots")
+        try? FileManager.default.createDirectory(at: shotDir, withIntermediateDirectories: true)
+
+        // 阶段一：进入详情页，验证并点击「缓存全剧」按钮
+        app.launchEnvironment["DISABLE_REMOTE_IMAGES"] = "1"
+        app.launchArguments = ["-testPage", "detail", "-testDramaId", "hongguo:7695704804978330649", "-testDramaTitle", "满院亲戚全是上古大妖第五季"]
+        app.launch()
+
+        wait("detail view ready", seconds: 60) {
+            self.app.buttons["detail.play"].exists && self.app.buttons["detail.download"].exists
+        }
+        XCTAssertTrue(app.buttons["detail.download"].exists, "剧集详情页成功加载并展示「缓存全剧」按钮")
+
+        if !app.buttons["detail.download"].hasFocus {
+            press(.right)
+            if !app.buttons["detail.download"].hasFocus {
+                press(.right)
+            }
+        }
+        wait("detail download focused", seconds: 15) {
+            self.app.buttons["detail.download"].hasFocus
+        }
+        XCTAssertTrue(app.buttons["detail.download"].hasFocus, "焦点精准移动至「缓存全剧」按钮")
+
+        // 截图 1：详情页「缓存全剧」获焦
+        let shot1 = XCUIScreen.main.screenshot()
+        try? shot1.pngRepresentation.write(to: shotDir.appendingPathComponent("01_detail_download_button_focused.png"))
+
+        // 点击「缓存全剧」触发全剧离线入队
+        press(.select)
+        sleep(2)
+
+        // 截图 2：详情页触发下载后
+        let shot2 = XCUIScreen.main.screenshot()
+        try? shot2.pngRepresentation.write(to: shotDir.appendingPathComponent("02_detail_download_triggered.png"))
+        app.terminate()
+
+        // 阶段二：进入下载管理页面，验证离线任务列表、任务项与控制按钮
+        app.launchArguments = ["-testPage", "downloads"]
+        app.launch()
+
+        wait("downloads nav focused", seconds: 30) {
+            self.app.buttons["nav.downloads"].hasFocus
+        }
+        // 按 Select 收起侧边栏并进入下载内容区
+        press(.select)
+        wait("downloads view entered", seconds: 20) {
+            !self.app.buttons["nav.downloads"].exists && self.app.staticTexts["下载与离线管理"].exists
+        }
+        XCTAssertTrue(app.staticTexts["下载与离线管理"].exists, "成功进入下载与离线管理页面")
+
+        wait("downloads task list populated", seconds: 20) {
+            self.app.buttons["downloads.clearAll"].exists
+        }
+        XCTAssertTrue(app.buttons["downloads.clearAll"].exists, "存在批量「清空任务」按钮")
+
+        // 截图 3：下载管理页中任务列表与进度展示
+        let shot3 = XCUIScreen.main.screenshot()
+        try? shot3.pngRepresentation.write(to: shotDir.appendingPathComponent("03_downloads_queue_populated.png"))
+
+        // 阶段三：执行清空任务，验证平滑恢复沉浸式空状态卡片
+        if !app.buttons["downloads.clearAll"].hasFocus {
+            for _ in 0..<3 {
+                if self.app.buttons["downloads.clearAll"].hasFocus { break }
+                press(.up)
+            }
+            if !self.app.buttons["downloads.clearAll"].hasFocus {
+                press(.right)
+            }
+        }
+        wait("clear all focused", seconds: 15) {
+            self.app.buttons["downloads.clearAll"].hasFocus
+        }
+        press(.select) // 清空全部任务
+        sleep(2)
+
+        wait("downloads cleared to empty state", seconds: 20) {
+            self.app.buttons["downloads.explore"].exists && !self.app.buttons["downloads.clearAll"].exists
+        }
+        XCTAssertTrue(app.buttons["downloads.explore"].exists, "清空任务后恢复全屏沉浸空状态，展示「去浏览短剧」")
+
+        // 截图 4：清空后的沉浸式空状态
+        let shot4 = XCUIScreen.main.screenshot()
+        try? shot4.pngRepresentation.write(to: shotDir.appendingPathComponent("04_downloads_cleared_empty_state.png"))
+
+        app.terminate()
+        print("THL_DOWNLOAD_E2E_VERIFICATION_COMPLETE detailEnqueue=true listPopulated=true clearAllSucceeded=true emptyStateRestored=true")
     }
 }

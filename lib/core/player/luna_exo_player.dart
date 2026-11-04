@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/utils/diary/diary_service.dart';
 import 'package:THLRedLook/core/player/playback_preferences.dart';
+import 'package:THLRedLook/core/player/playback_recovery.dart';
 
 /// 模拟与 media_kit.PlayerStream 接口对齐的流集合
 class LunaPlayerStreams implements PlayerStream {
@@ -155,9 +156,12 @@ class LunaExoPlayer implements Player {
   Timer? _watchdogTimer;
   int _consecutiveZeroSizeTicks = 0;
   PlaybackDecoderMode _decoderMode = PlaybackDecoderMode.hardware;
+  Media? _currentMedia;
+  bool _currentPlay = true;
 
   PlaybackDecoderMode get decoderMode => _decoderMode;
-  bool get isHardwareDecoding => true;
+  bool get isHardwareDecoding =>
+      _decoderMode == PlaybackDecoderMode.hardware && _streamPlayer == null;
 
   void setDecoderMode(PlaybackDecoderMode mode) {
     if (_decoderMode == mode) return;
@@ -173,6 +177,7 @@ class LunaExoPlayer implements Player {
   Future<void>? _disposeFuture;
   String? _controllerError;
   Player? _streamPlayer;
+  bool _streamHardwareDecoding = false;
   kit.VideoController? _streamVideo;
   final List<StreamSubscription<dynamic>> _streamSubscriptions = [];
 
@@ -212,13 +217,24 @@ class LunaExoPlayer implements Player {
     return (await _controller?.getAudioTracks())?.length ?? 0;
   }
 
-  Future<void> _openEncrypted(Media media, String key, bool play) async {
-    if (!RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(key)) {
+  Future<void> _openWithMediaKit(
+    Media media, {
+    String? key,
+    bool play = true,
+    bool hwdec = false,
+  }) async {
+    if (key != null &&
+        key.isNotEmpty &&
+        !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(key)) {
       throw const FormatException('视频内容密钥无效');
     }
     var native = _streamPlayer;
     final volume = state.volume;
     final rate = state.rate;
+    if (native != null && _streamHardwareDecoding != hwdec) {
+      await stop();
+      native = null;
+    }
     // Keep the player, render surface and audio output alive across episodes.
     // Reopening a cached media should not tear down the whole native backend.
     if (native == null) {
@@ -234,10 +250,18 @@ class LunaExoPlayer implements Player {
             ),
           );
       _streamPlayer = native;
+      _streamHardwareDecoding = hwdec;
       final videoFactory = streamingVideoFactory;
       _streamVideo = videoFactory == null
-          ? kit.VideoController(native)
+          ? kit.VideoController(
+              native,
+              configuration: kit.VideoControllerConfiguration(
+                enableHardwareAcceleration: hwdec,
+                hwdec: hwdec ? (Platform.isAndroid ? null : 'auto-safe') : 'no',
+              ),
+            )
           : videoFactory(native);
+      WidgetsBinding.instance.scheduleFrame();
       final current = native;
       void mirror<T>(
         Stream<T> input,
@@ -274,13 +298,25 @@ class LunaExoPlayer implements Player {
         repaint: true,
       );
       mirror(native.stream.error, stream.errorController);
+      _streamSubscriptions.add(
+        native.stream.log.listen((log) {
+          if (_disposed || !identical(current, _streamPlayer)) return;
+          _safeAdd(stream.logController, log);
+          if (PlaybackRecovery.videoOutputFailed(log.text)) {
+            _safeAdd(stream.errorController, log.text);
+          }
+        }),
+      );
       mirror(native.stream.volume, stream.volumeController);
       mirror(native.stream.rate, stream.rateController);
     }
     final generation = ++_openGeneration;
     try {
       final backend = native.platform as NativePlayer;
-      await backend.setProperty('demuxer-lavf-o', 'decryption_key=$key');
+      await backend.setProperty(
+        'demuxer-lavf-o',
+        key != null && key.isNotEmpty ? 'decryption_key=$key' : '',
+      );
       await backend.setProperty('network-timeout', '20');
       // Cached initial bytes are available locally; do not impose an additional
       // startup cache pause before showing the first decoded frame.
@@ -315,9 +351,20 @@ class LunaExoPlayer implements Player {
     final media = playable;
     final url = media.uri;
     if (url.isEmpty) return;
+    _currentMedia = media;
+    _currentPlay = play;
     final key = media.extras?['decryptionKey']?.toString() ?? '';
     if (key.isNotEmpty) {
-      return _openEncrypted(media, key, play);
+      return _openWithMediaKit(
+        media,
+        key: key,
+        play: play,
+        hwdec: _decoderMode == PlaybackDecoderMode.hardware,
+      );
+    }
+    if (_decoderMode == PlaybackDecoderMode.compatible) {
+      DiaryService.add('[LunaExoPlayer] 启用兼容模式：采用 MediaKit 软解兼容引擎起播');
+      return _openWithMediaKit(media, play: play, hwdec: false);
     }
     if (_streamPlayer != null) await stop();
 
@@ -346,8 +393,8 @@ class LunaExoPlayer implements Player {
         await old.dispose();
       } catch (_) {}
       // 在 Android 电视端/低运存设备，底层 MediaCodec release 具有短暂的驱动回收延迟
-      // 让出微小等待周期，彻底释放硬件解码器句柄与 Surface
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      // 让出充足等待周期，彻底释放硬件解码器句柄与 Surface
+      await Future<void>.delayed(const Duration(milliseconds: 120));
     }
 
     if (_disposed || myGen != _openGeneration) return;
@@ -545,7 +592,7 @@ class LunaExoPlayer implements Player {
     _startPositionPolling();
 
     // 启动大屏黑屏与首帧无画面自愈看门狗
-    _startWatchdog(c, myGen);
+    _startWatchdog(c, myGen, media, play);
 
     if (media.start != null && media.start! > Duration.zero) {
       try {
@@ -577,7 +624,12 @@ class LunaExoPlayer implements Player {
     });
   }
 
-  void _startWatchdog(VideoPlayerController c, int gen) {
+  void _startWatchdog(
+    VideoPlayerController c,
+    int gen,
+    Media media,
+    bool play,
+  ) {
     _watchdogTimer?.cancel();
     _consecutiveZeroSizeTicks = 0;
     _watchdogTimer = Timer.periodic(const Duration(milliseconds: 1000), (
@@ -595,7 +647,7 @@ class LunaExoPlayer implements Player {
           DiaryService.add(
             '[ExoPlayer Watchdog] 警告: 正在播放中但视频画面尺寸为 0x0 (tick=$_consecutiveZeroSizeTicks)',
           );
-          if (_consecutiveZeroSizeTicks >= 2) {
+          if (_consecutiveZeroSizeTicks == 2) {
             DiaryService.add(
               '[ExoPlayer Watchdog] 尝试触发硬解管线冲洗 (Keyframe Flush)...',
             );
@@ -603,6 +655,29 @@ class LunaExoPlayer implements Player {
               final pos = c.value.position;
               await c.seekTo(pos);
             } catch (_) {}
+          } else if (_consecutiveZeroSizeTicks >= 3) {
+            timer.cancel();
+            DiaryService.add(
+              '[ExoPlayer Watchdog] 判定电视硬解黑屏无画面：立即激活 MediaKit 软解兼容模式自愈恢复画面！',
+            );
+            if (!_disposed && gen == _openGeneration) {
+              final startPos = c.value.position;
+              final recoveryMedia = Media(
+                media.uri,
+                httpHeaders: media.httpHeaders,
+                start: startPos > Duration.zero ? startPos : null,
+                extras: media.extras,
+              );
+              try {
+                await _openWithMediaKit(
+                  recoveryMedia,
+                  play: play,
+                  hwdec: false,
+                );
+              } catch (e) {
+                DiaryService.add('[ExoPlayer Watchdog] 软解自愈失败: $e');
+              }
+            }
           }
         } else {
           _consecutiveZeroSizeTicks = 0;
@@ -617,6 +692,16 @@ class LunaExoPlayer implements Player {
     final v = c.value;
 
     bool stateChanged = false;
+    final size = v.size;
+    final w = size.width.round();
+    final h = size.height.round();
+    if (w > 0 && h > 0 && (w != state.width || h != state.height)) {
+      final vp = VideoParams(w: w, h: h, dw: w, dh: h);
+      state = state.copyWith(width: w, height: h, videoParams: vp);
+      _safeAdd(stream.videoParamsController, vp);
+      stateChanged = true;
+    }
+
     if (v.isPlaying != state.playing) {
       DiaryService.add('[ExoPlayer] isPlaying 变为: ${v.isPlaying}');
       state = state.copyWith(playing: v.isPlaying);
@@ -634,6 +719,37 @@ class LunaExoPlayer implements Player {
       if (_controllerError != error) {
         _controllerError = error;
         DiaryService.add('[ExoPlayer] controller error: $error');
+        // 当发生底层硬件解码器错误且当前在硬解模式时，自动切换到 MediaKit 软解兼容模式自愈
+        if (_controller == c &&
+            !_disposed &&
+            _decoderMode == PlaybackDecoderMode.hardware &&
+            RegExp(
+              r'(MediaCodec|DecoderInitializationException|ERROR_CODE_DECOD(?:ER|ING)|decoder.*(?:fail|error|exception|initializ)|(?:cannot|failed to) decode)',
+              caseSensitive: false,
+            ).hasMatch(error) &&
+            _currentMedia != null) {
+          DiaryService.add('[ExoPlayer] 捕获硬件解码异常，自动回退到 MediaKit 兼容软解引擎进行重播...');
+          final lastMedia = _currentMedia!;
+          final startPos = v.position;
+          final recoveryMedia = Media(
+            lastMedia.uri,
+            httpHeaders: lastMedia.httpHeaders,
+            start: startPos > Duration.zero ? startPos : null,
+            extras: lastMedia.extras,
+          );
+          unawaited(
+            _openWithMediaKit(
+              recoveryMedia,
+              play: _currentPlay,
+              hwdec: false,
+            ).catchError((Object failure) {
+              if (!_disposed && identical(_currentMedia, lastMedia)) {
+                _safeAdd(stream.errorController, error);
+              }
+            }),
+          );
+          return;
+        }
         _safeAdd(stream.errorController, error);
       }
     }

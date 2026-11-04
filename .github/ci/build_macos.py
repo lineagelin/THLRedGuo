@@ -12,8 +12,10 @@ from pathlib import Path
 
 from app_build import BuildVariant, add_variant_argument, sync_project_version, get_beijing_build_number
 
+from prepare_official_source import prepared_official_source
+from source_manifest import verify_flutter_directory
+
 root = Path(__file__).resolve().parents[2]
-sync_project_version(root, "1.0.0")
 
 
 def run(cmd, **kwargs):
@@ -93,6 +95,9 @@ def create_dmg(app_path: Path, dmg_target: Path, volume_name: str = "糖葫芦")
     try:
         dest_app = staging_dir / app_path.name
         run(["ditto", str(app_path), str(dest_app)])
+        verify_flutter_directory(
+            dest_app / 'Contents' / 'Frameworks' / 'App.framework' / 'Resources' / 'flutter_assets' / 'assets' / 'sources'
+        )
 
         app_link = staging_dir / "Applications"
         if not app_link.exists():
@@ -108,6 +113,7 @@ def create_dmg(app_path: Path, dmg_target: Path, volume_name: str = "糖葫芦")
         ]
         print(f"正在创建 macOS DMG 磁盘镜像安装包 -> {dmg_target}...")
         run(cmd)
+        run(['hdiutil', 'verify', str(dmg_target)])
 
         # 若环境中配置了解锁的签名证书，对 DMG 磁盘镜像进行签名
         try:
@@ -142,6 +148,12 @@ def main():
     if not flutter or not xcodebuild:
         raise SystemExit("请先确保 Flutter 与 Xcode 命令行工具已正确安装并加入 PATH。")
 
+    with prepared_official_source(root):
+        sync_project_version(root, "1.0.0")
+        build(options, variant, flutter, xcodebuild)
+
+
+def build(options, variant, flutter, xcodebuild):
     run([flutter, "pub", "get"])
     # 关键：先执行 flutter build macos --config-only 生成 ephemeral 依赖与 xcfilelist，避免 clean CI 环境下 xcodebuild 报错
     run([flutter, "build", "macos", "--config-only", "--release", *variant.flutter_arguments])

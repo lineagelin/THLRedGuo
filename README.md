@@ -9,6 +9,12 @@
   <a href="https://t.me/tanghulutvos"><img src="https://img.shields.io/badge/Telegram-Group-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram Group" /></a>
 </p>
 
+## 项目定位
+
+以下声明适用于本项目当前公开源码：
+
+> 本项目仅用于学习交流网络框架与架构设计，出于法律合规与安全考虑，已移除目标平台的核心签名参数（Secret/Salt），不提供开箱即用的破解功能。
+
 > ⚠️ **免责声明 (Disclaimer)**：
 > 1. **仅供学习研究**：本项目仅供编程技术交流、Flutter 跨平台与 Apple tvOS 原生应用架构研究使用，严禁用于任何商业牟利或侵权用途；
 > 2. **纯客户端工具，无内容存储**：本项目为纯本地端侧播放器工具，无需注册登录即可直接使用；开发者不搭建、不运营任何流媒体服务器，不提供、不存储、不分发任何音视频资源；
@@ -22,6 +28,8 @@
 ## JS 数据源
 
 应用内置官方 `assets/sources/hongguo.js`，也可在数据源管理页面导入兼容的 JS 数据源。iOS、iPadOS 与 tvOS 的浏览和在线播放均通过 JS 数据源工作，用户无需准备或导入 Android APK。
+
+独立导入请使用 [发布版 hongguo.js](https://github.com/never88gone/THLRedGuo/releases/download/official-source/hongguo.js)。
 
 - **iOS / iPadOS**：进入「设置 → JS 数据源插件管理」管理数据源。
 - **tvOS**：进入「设置 → 站源管理」查看当前 JS 版本、导入数据源网址和执行诊断。
@@ -57,6 +65,12 @@
 | :---: | :---: | :---: |
 | <img src="assets/screenshots/mobile_detail.png" width="180" alt="剧集详情" /> | <img src="assets/screenshots/mobile_player_portrait.png" width="180" alt="竖屏播放" /> | <img src="assets/screenshots/mobile_player_fullscreen.png" width="260" alt="横屏播放" /> |
 
+### 📱 iPhone Duo 双屏折叠设备适配 (iOS)
+
+| iPhone Duo 折叠态 (外屏 3 列自适应网格) | iPhone Duo 展开态 (折叠屏打开 4 列大画幅瀑布流) |
+| :---: | :---: |
+| <img src="assets/screenshots/iphone_duo_home.png" width="220" alt="iPhone Duo 折叠外屏" /> | <img src="assets/screenshots/iphone_duo_unfolded.png" width="310" alt="iPhone Duo 展开内屏" /> |
+
 ### 🗂️ 追剧、历史、离线缓存与插件管理
 
 | 我的追剧收藏 | 最近观看 | 离线下载管理 | JS 数据源插件管理 |
@@ -89,7 +103,7 @@
 | :--- | :--- | :--- |
 | **Android** | 适配手机、折叠屏与老旧设备，兼容 Android 7.1+（API 25+），支持竖屏短剧滑动手势、画中画（PiP）浮窗、arm64-v8a / armeabi-v7a / x86_64 三架构 | 原生 Flutter + NDK 编译，输出 APK / AAB |
 | **Android TV** | 自动识别大屏电视模式，锁定横屏影院布局，完整适配遥控器方向键与焦点移动 | 共用 Flutter 源码，自适应电视 UI 布局 |
-| **iOS** | 适配 iPhone / iPad，原生画中画（PiP）小窗播放与后台接续、深色模式自适应、原生手势返回与低功耗下载 | Xcode 编译签名，输出 IPA 归档；支持 [Apple TestFlight](https://testflight.apple.com/join/rkvvdp7J) 一键安装 |
+| **iOS / iPadOS** | 适配 iPhone、iPad 与 iPhone Duo 双屏折叠设备，原生画中画（PiP）小窗播放与后台接续、深色模式自适应、原生手势返回与低功耗下载 | 支持 [Apple TestFlight](https://testflight.apple.com/join/rkvvdp7J) 一键安装，或通过 Xcode 编译打包 |
 | **macOS** | 桌面端大屏响应式三栏/分栏布局，键盘方向键与快捷键全面支持 | macOS App / PKG 安装包 |
 | **Windows** | 基于 `media_kit` / libmpv 硬件解码，集成专属 Shader 画质增强滤镜 | 独立免安装绿色包 / 便携目录（含完整 DLL 与运行环境） |
 | **Apple tvOS** | 独立原生工程（`tvos/`），纯 SwiftUI + Siri Remote 焦点引擎 + AVKit 原生渲染打造，具备完整客厅大屏交互与原生影院体验 | 独立 Xcode 工程，输出 tvOS IPA；支持 [Apple TestFlight](https://testflight.apple.com/join/rkvvdp7J) 一键安装 |
@@ -150,57 +164,15 @@
 
 ---
 
-## 目录结构概览
-
-```
-THLRedLook
-├── lib/                   # Flutter 跨平台业务逻辑、页面 UI、播放器控制器与端侧调度
-├── android/               # Android 原生平台工程与清单配置
-├── ios/                   # iOS 原生平台工程、Podfile 与签名配置
-├── macos/                 # macOS 桌面端平台工程与权限配置
-├── windows/               # Windows 桌面端 Runner 与 CMake 构建系统
-├── tvos/                  # Apple tvOS 原生独立工程（SwiftUI + AVKit + Focus Engine）
-└── .github/ci/            # 构建、打包、官方 JS 校验与 TestFlight 工具
-```
-
----
-
-## 开发与本地构建
-
-### 环境准备
-- **Flutter SDK**：3.44.x+（推荐使用 `fvm`）
-- **Python**：3.10+（用于运行工程工具链脚本）
-- **平台依赖**：
-  - Android：JDK 17+、Android SDK 36
-  - iOS / macOS / tvOS：macOS 系统、Xcode 16+、CocoaPods
-  - Windows：Visual Studio 2022 C++ 桌面开发套件
-
-### 运行与调试
-本项目零服务器配置依赖，一键拉取依赖即可运行：
+## 构建说明
 
 ```bash
-# 获取 Flutter 依赖
+# 获取依赖
 flutter pub get
 
-# 启动本地调试（全平台支持）
+# 启动运行
 flutter run
 ```
-
-### 构建与发布
-
-仓库保留的最小工具链位于 `.github/ci/`，CI 和本地打包使用相同入口：
-
-```bash
-python3 .github/ci/build_android.py
-python3 .github/ci/build_windows.py
-python3 .github/ci/build_ios.py
-python3 .github/ci/build_macos.py
-python3 .github/ci/build_tvos.py
-```
-
-Apple 平台的签名打包使用 `--export-options` 指定对应的 ExportOptions.plist；tvOS 归档另加 `--package`。tvOS 本地调试先在 `tvos/` 运行 `pod install`，再打开 `THLRedLook.xcworkspace`，选择 Apple TV 模拟器运行。
-
-应用版本保持 `1.0.0`。Apple 平台 CI 自动打包并上传 TestFlight；tvOS 公开组分发仅由手动工作流明确勾选 `publish_public` 触发。
 
 ---
 

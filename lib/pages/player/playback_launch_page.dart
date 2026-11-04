@@ -35,6 +35,8 @@ Future<void> openPlaybackDirectly(
     if (merged.episodes.isEmpty) {
       throw AppFailure('暂时没有可播放的集数');
     }
+    await store.prepareAccountDrama(mergedDrama);
+    if (!context.mounted || profileEpoch != store.profileEpoch) return;
     final watched = store.watched(mergedDrama.id);
     final index = resumeEpisodeIndex(merged.episodes, watched);
     final episode = merged.episodes[index];
@@ -140,6 +142,12 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
       }
       if (merged.episodes.isEmpty) {
         setState(() => _error = '暂时没有可播放的集数');
+        return;
+      }
+      await widget.store.prepareAccountDrama(drama);
+      if (!mounted ||
+          generation != _generation ||
+          _profileEpoch != widget.store.profileEpoch) {
         return;
       }
       final watched = widget.store.watched(drama.id);

@@ -7,9 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C1A3B602F4D3468399B31104 /* AccountPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A3B602F4D3468399B31103 /* AccountPairingTests.swift */; };
+		C1A3B602F4D3468399B31102 /* AccountPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A3B602F4D3468399B31101 /* AccountPairing.swift */; };
 		00F6DAC96490A839B6FC75EA /* HongguoApkProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E4F0775CA2B5213DAF9E20 /* HongguoApkProfile.swift */; };
 		12F647818F7F44998727220E /* OverseasSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D65F6E5782B4A27B4F2B7C1 /* OverseasSearchTests.swift */; };
+		D1D000002C00000100000001 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D000002C00000100000002 /* DownloadServiceTests.swift */; };
 		1F6926DCCD8AAF72AD718D1E /* ApkProfileImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D255715E326D23643B59BC9D /* ApkProfileImportSheet.swift */; };
+		25C440231CE2B2DA7D759FBF /* TVAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90236F9F822D5D6ADD2A01CC /* TVAccountView.swift */; };
 		308BB92FAD6A638F5B858747 /* CENCMediaDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70F9F945791042E6F2FE9F1 /* CENCMediaDownloader.swift */; };
 		3B9F1C5ADE795910FBD0AD03 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6299EBC862612C3A90774337 /* Foundation.framework */; };
 		3EB52B87EAB6FA6FA6506647 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6299EBC862612C3A90774337 /* Foundation.framework */; };
@@ -22,6 +26,7 @@
 		7A25873DCEE90B41E3C04905 /* ApkProfileImportServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30C46674D4352DBF7CD9CB5 /* ApkProfileImportServer.swift */; };
 		81C7FE1DA08787168F35C136 /* ICloudSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A05A2DA4811816BFC444CF4 /* ICloudSyncTests.swift */; };
 		90DA19CCFD6C5C493E36FED0 /* ListLoadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADCC53A4B80992B7FB26447F /* ListLoadingTests.swift */; };
+		9B439046CEA28AFCCA409716 /* HongguoAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8916276259AF5B77E0B0DE40 /* HongguoAccount.swift */; };
 		A10000012C00000100000001 /* THLRedLookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000012C00000100000001 /* THLRedLookApp.swift */; };
 		A10000022C00000100000001 /* SourceSite.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000022C00000100000001 /* SourceSite.swift */; };
 		A10000032C00000100000001 /* Drama.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000032C00000100000001 /* Drama.swift */; };
@@ -104,6 +109,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C1A3B602F4D3468399B31103 /* AccountPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPairingTests.swift; sourceTree = "<group>"; };
+		C1A3B602F4D3468399B31101 /* AccountPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPairing.swift; sourceTree = "<group>"; };
 		041C7B5549D0E24FBE7D25F6 /* Pods_THLRedLook.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_THLRedLook.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1D9437790F04A5D01FEC2D84 /* Pods-THLRedLookTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-THLRedLookTests.debug.xcconfig"; path = "Target Support Files/Pods-THLRedLookTests/Pods-THLRedLookTests.debug.xcconfig"; sourceTree = "<group>"; };
 		221C9DFACA76E6DED5DC2B01 /* Pods_THLRedLookTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_THLRedLookTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,8 +122,11 @@
 		66E4F0775CA2B5213DAF9E20 /* HongguoApkProfile.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HongguoApkProfile.swift; path = ../shared/apple/HongguoApkProfile.swift; sourceTree = "<group>"; };
 		6A9AED8C8EB9E35575961261 /* THLRedLookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = THLRedLookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D65F6E5782B4A27B4F2B7C1 /* OverseasSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverseasSearchTests.swift; sourceTree = "<group>"; };
+		D1D000002C00000100000002 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
 		83ED37DCE4952B3E82C4DBD3 /* CENCDecoderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CENCDecoderTests.swift; sourceTree = "<group>"; };
+		8916276259AF5B77E0B0DE40 /* HongguoAccount.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HongguoAccount.swift; path = THLRedLook/Core/HongguoAccount.swift; sourceTree = SOURCE_ROOT; };
 		8A05A2DA4811816BFC444CF4 /* ICloudSyncTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ICloudSyncTests.swift; sourceTree = "<group>"; };
+		90236F9F822D5D6ADD2A01CC /* TVAccountView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TVAccountView.swift; path = THLRedLook/Views/Settings/TVAccountView.swift; sourceTree = SOURCE_ROOT; };
 		98E5CF00A15647D68EF83727 /* DiagnosticsShareServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsShareServer.swift; sourceTree = "<group>"; };
 		9E1EEFA726D64CAC46CB01B5 /* LocalLibraryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLibraryTests.swift; sourceTree = "<group>"; };
 		A41C80E59CBF4F2096A85A02 /* TVQualitySelectionDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVQualitySelectionDrawer.swift; sourceTree = "<group>"; };
@@ -271,12 +281,14 @@
 			isa = PBXGroup;
 			children = (
 				DDF46F916F921E87B28F33AB /* PlaybackTests.swift */,
+				C1A3B602F4D3468399B31103 /* AccountPairingTests.swift */,
 				83ED37DCE4952B3E82C4DBD3 /* CENCDecoderTests.swift */,
 				9E1EEFA726D64CAC46CB01B5 /* LocalLibraryTests.swift */,
 				ADCC53A4B80992B7FB26447F /* ListLoadingTests.swift */,
 				8A05A2DA4811816BFC444CF4 /* ICloudSyncTests.swift */,
 				E546AAF2A007402D961770A4 /* StartupPerformanceTests.swift */,
 				6D65F6E5782B4A27B4F2B7C1 /* OverseasSearchTests.swift */,
+				D1D000002C00000100000002 /* DownloadServiceTests.swift */,
 			);
 			path = THLRedLookTests;
 			sourceTree = "<group>";
@@ -291,6 +303,8 @@
 				B10A80F99E2D9849B8980719 /* THLRedLookTests */,
 				05D057238BF0376567EE6F32 /* THLRedLookUITests */,
 				22EE514ABD32812A24D85A57 /* LocalPlayback */,
+				8916276259AF5B77E0B0DE40 /* HongguoAccount.swift */,
+				90236F9F822D5D6ADD2A01CC /* TVAccountView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -346,6 +360,7 @@
 		G10000032C00000100000001 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				C1A3B602F4D3468399B31101 /* AccountPairing.swift */,
 				E34571822EE6111100000022 /* SourceDiagnostics.swift */,
 				E6E285CB14404C4988A2A1A2 /* NetworkEgressLookup.swift */,
 				98E5CF00A15647D68EF83727 /* DiagnosticsShareServer.swift */,
@@ -690,7 +705,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n#!/bin/bash\nexport TZ=\"Asia/Shanghai\"\nbuildNumber=${BUILD_NUMBER:-$(TZ=\"Asia/Shanghai\" date +%Y%m%d%H%M%S)}\nif [ \"$CONFIGURATION\" == \"Release\" ] || [ -n \"$BUILD_NUMBER\" ] || [ \"$FORCE_BUMP_BUILD\" == \"1\" ]; then\n    echo \"Bumping build number to $buildNumber (Beijing Time)...\"\n    target_plist=\"${SRCROOT}/${INFOPLIST_FILE}\"\n    if [ -f \"$target_plist\" ]; then\n        /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $buildNumber\" \"$target_plist\"\n    fi\n    if [ -n \"$TARGET_BUILD_DIR\" ] && [ -n \"$INFOPLIST_PATH\" ] && [ -f \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" ]; then\n        /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $buildNumber\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" || true\n    fi\nelse\n    echo \"$CONFIGURATION build - Keep current build number.\"\nfi\n\nset -e\npython3 \"${SRCROOT}/../.github/ci/source_manifest.py\" write --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n#!/bin/bash\nexport TZ=\"Asia/Shanghai\"\nbuildNumber=${BUILD_NUMBER:-$(TZ=\"Asia/Shanghai\" date +%Y%m%d%H%M%S)}\nif [ \"$CONFIGURATION\" == \"Release\" ] || [ -n \"$BUILD_NUMBER\" ] || [ \"$FORCE_BUMP_BUILD\" == \"1\" ]; then\n    echo \"Bumping build number to $buildNumber (Beijing Time)...\"\n    target_plist=\"${SRCROOT}/${INFOPLIST_FILE}\"\n    if [ -f \"$target_plist\" ]; then\n        /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $buildNumber\" \"$target_plist\"\n    fi\n    if [ -n \"$TARGET_BUILD_DIR\" ] && [ -n \"$INFOPLIST_PATH\" ] && [ -f \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" ]; then\n        /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $buildNumber\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" || true\n    fi\nelse\n    echo \"$CONFIGURATION build - Keep current build number.\"\nfi\n\nset -e\npython3 \"${SRCROOT}/../.github/ci/source_manifest.py\" write --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\npython3 \"${SRCROOT}/../tool/prepare_local_debug_source.py\" --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -701,12 +716,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				BC5B31CB27136862380FB32F /* PlaybackTests.swift in Sources */,
+				C1A3B602F4D3468399B31104 /* AccountPairingTests.swift in Sources */,
 				3F654B7E4306B53376917E16 /* CENCDecoderTests.swift in Sources */,
 				CABD071B5C68D672495450B9 /* LocalLibraryTests.swift in Sources */,
 				90DA19CCFD6C5C493E36FED0 /* ListLoadingTests.swift in Sources */,
 				81C7FE1DA08787168F35C136 /* ICloudSyncTests.swift in Sources */,
 				7689C3C1BE0A477888B3828B /* StartupPerformanceTests.swift in Sources */,
 				12F647818F7F44998727220E /* OverseasSearchTests.swift in Sources */,
+				D1D000002C00000100000001 /* DownloadServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -745,6 +762,7 @@
 				46A67D6BBFE54AF28CD2FBE5 /* PlaybackAssetFactory.swift in Sources */,
 				A10000992C00000100000001 /* PlatformProtocols.swift in Sources */,
 				A10000132C00000100000001 /* LanSyncService.swift in Sources */,
+				C1A3B602F4D3468399B31102 /* AccountPairing.swift in Sources */,
 				A10000142C00000100000001 /* DownloadService.swift in Sources */,
 				A10000152C00000100000001 /* HomeViewModel.swift in Sources */,
 				A10000162C00000100000001 /* SearchViewModel.swift in Sources */,
@@ -786,6 +804,8 @@
 				6E79A4B5895BFF20763CC4EF /* HongguoPlaybackProfileVault.swift in Sources */,
 				7A25873DCEE90B41E3C04905 /* ApkProfileImportServer.swift in Sources */,
 				1F6926DCCD8AAF72AD718D1E /* ApkProfileImportSheet.swift in Sources */,
+				9B439046CEA28AFCCA409716 /* HongguoAccount.swift in Sources */,
+				25C440231CE2B2DA7D759FBF /* TVAccountView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

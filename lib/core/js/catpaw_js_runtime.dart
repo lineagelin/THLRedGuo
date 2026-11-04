@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'hongguo_guest_session.dart';
+import '../account/hongguo_account_session.dart';
 import 'hongguo_playback_profile.dart';
 
 import 'package:THLRedLook/core/diagnostics/source_diagnostics.dart';
@@ -134,6 +135,8 @@ class CatPawJsRuntime {
   String? _injectedDeviceSession;
   DateTime? _injectedDeviceCreatedAt;
   bool _officialSource = false;
+  bool _trustedAccountSource = false;
+  int _activeAccountRevision = 0;
   int _successfulPlaybackResolves = 0;
   DateTime? _lastSuccessfulPlayback;
   int _evaluationSequence = 0;
@@ -190,7 +193,12 @@ class CatPawJsRuntime {
     if (result.isError) {
       throw Exception('JS 脚本加载失败: ${result.stringResult}');
     }
-    if (HongguoPlaybackProfile.supported) {
+    final builtInSigning =
+        _rt
+            .evaluate('globalThis.__hongguoHasBuiltInSigning === true')
+            .stringResult ==
+        'true';
+    if (HongguoPlaybackProfile.supported && !builtInSigning) {
       final bundled = await rootBundle.loadString('assets/sources/hongguo.js');
       if (sha256.convert(utf8.encode(script)) ==
           sha256.convert(utf8.encode(bundled))) {
@@ -205,7 +213,68 @@ class CatPawJsRuntime {
             )
             .stringResult ==
         'hongguo';
+    if (_officialSource) {
+      try {
+        final bundled = await rootBundle.loadString(
+          'assets/sources/hongguo.js',
+        );
+        _trustedAccountSource =
+            sha256.convert(utf8.encode(script)) ==
+            sha256.convert(utf8.encode(bundled));
+      } catch (_) {
+        _trustedAccountSource = false;
+      }
+    }
     _ready = true;
+  }
+
+  Future<Map<String, dynamic>> accountRequest(
+    String action,
+    Map<String, dynamic> payload,
+  ) async {
+    if (!_trustedAccountSource) {
+      throw const HongguoAccountFailure('当前数据源不支持安全账号接入');
+    }
+    final value = await _evalAsync(
+      'spider.accountRequest(${jsonEncode(action)}, ${jsonEncode(payload)})',
+      operation: '账号请求准备',
+    );
+    if (value is! Map) throw const HongguoAccountFailure('账号请求格式无效');
+    return Map<String, dynamic>.from(value);
+  }
+
+  Map<String, dynamic> accountParse(String action, String body) {
+    _assertReady();
+    if (!_trustedAccountSource) {
+      throw const HongguoAccountFailure('当前数据源不支持安全账号接入');
+    }
+    final value = _rt.evaluate(
+      'JSON.stringify(spider.accountParse(${jsonEncode(action)}, ${jsonEncode(body)}))',
+    );
+    if (value.isError) {
+      if (value.stringResult.contains(
+        'ACCOUNT_SECONDARY_VERIFICATION_REQUIRED',
+      )) {
+        throw const HongguoAccountFailure(
+          '请在红果 App 完成账号安全验证后使用扫码登录',
+          'SECONDARY_VERIFICATION_REQUIRED',
+        );
+      }
+      if (value.stringResult.contains('ACCOUNT_CHALLENGE_REQUIRED')) {
+        throw const HongguoAccountFailure(
+          '红果要求额外安全验证，请使用红果 App 扫码登录',
+          'CHALLENGE_REQUIRED',
+        );
+      }
+      final code = RegExp(
+        r'ACCOUNT_BUSINESS_(-?[0-9]{1,9})',
+      ).firstMatch(value.stringResult)?.group(1);
+      if (code != null) {
+        throw HongguoAccountFailure('官方账号请求失败（错误码 $code）', 'BUSINESS_$code');
+      }
+      throw const HongguoAccountFailure('账号校验失败，请重新扫码或稍后重试');
+    }
+    return Map<String, dynamic>.from(jsonDecode(value.stringResult) as Map);
   }
 
   Future<void> _refreshSigningCache() async {
@@ -371,6 +440,29 @@ globalThis.__native_save_device = function(json) {
       final body = params['body']?.toString();
 
       final uri = Uri.parse(url);
+      final account = HongguoAccountSession.shared;
+      final accountBusiness =
+          _officialSource && HongguoAccountSession.businessUrl(uri);
+      if (accountBusiness && _activeAccountRevision != account.revision) {
+        throw const HongguoAccountFailure('账号已切换，请重试', 'CANCELLED');
+      }
+      if (accountBusiness && account.loggedIn) {
+        if (!_trustedAccountSource) {
+          throw const HongguoAccountFailure(
+            '请更新官方数据源后使用账号',
+            'ACCOUNT_SOURCE_UNTRUSTED',
+          );
+        }
+        final cookie = account.headerFor(uri);
+        if (cookie.isEmpty) {
+          throw const HongguoAccountFailure(
+            '账号登录态已过期，请重新扫码',
+            'ACCOUNT_EXPIRED',
+          );
+        }
+        headers['Cookie'] = cookie;
+      }
+
       final officialMetadata =
           uri.scheme == 'https' &&
           (uri.host == 'reading.snssdk.com' ||
@@ -397,7 +489,9 @@ globalThis.__native_save_device = function(json) {
         final request =
             http.AbortableRequest(method, uri, abortTrigger: abort.future)
               ..headers.addAll(headers)
-              ..followRedirects = params['redirect'] != 'manual';
+              ..followRedirects =
+                  !(accountBusiness && account.loggedIn) &&
+                  params['redirect'] != 'manual';
         if (body != null && method != 'HEAD' && method != 'GET') {
           request.body = body;
         }
@@ -424,6 +518,9 @@ globalThis.__native_save_device = function(json) {
         if (!abort.isCompleted) abort.complete();
       }
 
+      if (accountBusiness && _activeAccountRevision != account.revision) {
+        throw const HongguoAccountFailure('账号已切换，请重试', 'CANCELLED');
+      }
       if (_isDisposed) {
         return {'status': 0, 'headers': <String, String>{}, 'body': ''};
       }
@@ -847,6 +944,10 @@ globalThis.__native_save_device = function(json) {
         initializationOwner = guestSessions.beginInitialization();
       }
       final data = await _runEval(jsCode, timeout, stopwatch, cancellation);
+      if (_officialSource &&
+          _activeAccountRevision != HongguoAccountSession.shared.revision) {
+        throw const HongguoAccountFailure('账号已切换，请重试', 'CANCELLED');
+      }
       if (!recoverGuest || !_officialSource || !persistentDeviceSession) {
         return data;
       }
@@ -960,6 +1061,10 @@ globalThis.__native_save_device = function(json) {
     if (cancellation != _cancellation) {
       throw CatPawSourceFailure.playback('cancelled');
     }
+    _activeAccountRevision = HongguoAccountSession.shared.revision;
+    _rt.evaluate(
+      'globalThis.__hongguoAccountActive = ${_trustedAccountSource && HongguoAccountSession.shared.loggedIn};',
+    );
     final evaluation = ++_evaluationSequence;
     _modelResponses = [];
     _syncDeviceSession();
@@ -1094,8 +1199,16 @@ globalThis.__native_save_device = function(json) {
       );
 
   void _syncDeviceSession() {
-    if (!persistentDeviceSession) return;
-    final session = guestSessions.value;
+    final account = HongguoAccountSession.shared;
+    if (!persistentDeviceSession &&
+        !(_trustedAccountSource &&
+            account.loggedIn &&
+            account.deviceSession != null)) {
+      return;
+    }
+    final session = _trustedAccountSource && account.loggedIn
+        ? account.deviceSession ?? guestSessions.value
+        : guestSessions.value;
     if (_injectedDeviceSession == session) {
       _injectedDeviceCreatedAt = guestSessions.createdAt;
       return;
@@ -1545,8 +1658,8 @@ class CatPawRuntimePool {
   final Map<String, String> _scripts = {};
   final Map<String, Future<CatPawJsRuntime>> _pending = {};
   final Map<String, int> _generations = {};
-  final Map<String, int> _profileRevisions = {};
   bool _isDisposed = false;
+  int _accountRevision = -1;
 
   CatPawRuntimePool([http.Client? httpClient])
     : _httpClient = httpClient ?? http.Client(),
@@ -1560,11 +1673,13 @@ class CatPawRuntimePool {
     String scope = 'catalog',
   }) async {
     if (_isDisposed) throw StateError('CatPawRuntimePool 已经销毁');
+    final revision = HongguoAccountSession.shared.revision;
+    if (_accountRevision != revision) {
+      clear();
+      _accountRevision = revision;
+    }
     final key = '$sourceId\u0000$scope';
-    final profileRevision = sourceId == 'hongguo'
-        ? HongguoPlaybackProfile.revision
-        : 0;
-    if (_scripts[key] == script && _profileRevisions[key] == profileRevision) {
+    if (_scripts[key] == script) {
       final pending = _pending[key];
       if (pending != null) return pending;
       final runtime = _pool[key];
@@ -1581,7 +1696,6 @@ class CatPawRuntimePool {
     _removeKey(key);
     final generation = _generations[key]!;
     _scripts[key] = script;
-    _profileRevisions[key] = profileRevision;
     final runtime = CatPawJsRuntime(_httpClient);
     final future = () async {
       try {
@@ -1608,7 +1722,6 @@ class CatPawRuntimePool {
     _generations[key] = (_generations[key] ?? 0) + 1;
     _pending.remove(key);
     _scripts.remove(key);
-    _profileRevisions.remove(key);
     _pool.remove(key)?.dispose();
   }
 

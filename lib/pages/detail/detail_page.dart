@@ -136,6 +136,7 @@ class _DetailScreenState extends State<DetailScreen> {
         return;
       }
       final detail = await widget.repository.detail(drama);
+      await widget.store.prepareAccountDrama(detail.drama);
       if (!mounted ||
           generation != _generation ||
           _profileEpoch != widget.store.profileEpoch) {
@@ -335,6 +336,17 @@ class _DetailScreenState extends State<DetailScreen> {
         !widget.store.allowsSource(detail.drama.source)) {
       return;
     }
+    try {
+      await widget.store.prepareAccountDrama(detail.drama);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('账号进度获取失败，请重试')));
+      }
+      return;
+    }
+    if (!mounted) return;
     if (widget.onPlayRequested != null) {
       widget.onPlayRequested!(index);
       return;
@@ -1980,7 +1992,12 @@ class _DetailScreenState extends State<DetailScreen> {
             message: '追剧与观看状态',
             child: InkWell(
               key: const ValueKey('follow-status'),
-              onTap: () => _showFollowStatusSheet(context, drama, state),
+              onTap: () => widget.store.usesAccountLibrary(drama.id)
+                  ? saveUserChange(
+                      context,
+                      () => widget.store.setFavorite(drama, !isFollowed),
+                    )
+                  : _showFollowStatusSheet(context, drama, state),
               borderRadius: BorderRadius.circular(14),
               child: Ink(
                 height: 30,
@@ -2009,7 +2026,9 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      state?.label ?? '追剧',
+                      widget.store.usesAccountLibrary(drama.id)
+                          ? (isFollowed ? '已追剧' : '追剧')
+                          : state?.label ?? '追剧',
                       style: TextStyle(
                         color: isFollowed ? statusColor : colors.onSurface,
                         fontSize: 11.5,

@@ -10,6 +10,63 @@ final class PlaybackTests: XCTestCase {
     private var videoLayer: AVPlayerLayer?
     private var testStarted = Date()
 
+    func testOfficialAccountCookieScope() throws {
+        let now = Date()
+        let record = HongguoAccountRecord(id: "123", nickname: "synthetic", cookies: [
+            HongguoCookie(name: "sessionid", value: "synthetic-session", domain: "hongguoduanju.com", path: "/", expires: now.addingTimeInterval(60)),
+            HongguoCookie(name: "passport_csrf_token", value: "synthetic-csrf", domain: "hongguoduanju.com", path: "/", expires: nil),
+            HongguoCookie(name: "uid_tt", value: "expired", domain: "hongguoduanju.com", path: "/", expires: now.addingTimeInterval(-60))])
+        let vault = HongguoAccountVault.shared
+        XCTAssertEqual(vault.header(for: try XCTUnwrap(URL(string: "https://reading.snssdk.com/novel/player/multi_video_model/v1/")), record: record), "sessionid=synthetic-session")
+        XCTAssertEqual(vault.header(for: try XCTUnwrap(URL(string: "https://api5-normal.fqnovel.com/novel/player/multi_video_model/v1/")), record: record), "sessionid=synthetic-session")
+        for raw in ["https://v5-reading-video.qznovelvod.com/reading/test", "https://github.com/reading/test", "https://reading.snssdk.com.evil.test/reading/test", "http://reading.snssdk.com/reading/test", "https://reading.snssdk.com/unrelated", "https://api5-normal.fqnovel.com.evil.test/novel/player/multi_video_model/v1/", "https://api5-normal.fqnovel.com/unrelated"] {
+            XCTAssertEqual(vault.header(for: try XCTUnwrap(URL(string: raw)), record: record), "")
+        }
+    }
+
+    func testOfficialAccountSourceContracts() async throws {
+        let command = try await NativeBridge.shared.accountRequest("qr")
+        let url = try XCTUnwrap(URLComponents(string: try XCTUnwrap(command["url"] as? String)))
+        XCTAssertEqual(url.host, "hongguoduanju.com")
+        XCTAssertEqual(url.path, "/passport/web/get_qrcode/")
+        XCTAssertEqual(url.queryItems?.first { $0.name == "aid" }?.value, "513755")
+        let profile = try await NativeBridge.shared.accountParse("profile", body: "{\"code\":0,\"data\":{\"biz_user_id\":7688558312157088793,\"user_name\":\"synthetic\"}}")
+        XCTAssertEqual(profile["id"] as? String, "7688558312157088793")
+        do {
+            _ = try await NativeBridge.shared.accountParse("poll", body: "{\"message\":\"error\",\"data\":{\"error_code\":1102,\"description\":\"synthetic\"}}")
+            XCTFail("Business rejection must remain distinguishable from a network failure")
+        } catch { XCTAssertEqual(error as? HongguoAccountError, .business(1102)) }
+    }
+
+    func testOfficialAccountLibraryContracts() async throws {
+        let rows = try await NativeBridge.shared.accountParse("history", body: "{\"code\":0,\"data\":null,\"video_data\":[{\"series_id\":7688558312157088793,\"vid\":1234567890123456789,\"vid_index\":12,\"current_play_time\":23500,\"current_total_time\":90000}]}")
+        let items = try XCTUnwrap(rows["items"] as? [[String: Any]])
+        XCTAssertEqual(items.first?["id"] as? String, "7688558312157088793")
+        XCTAssertEqual((items.first?["episode"] as? NSNumber)?.intValue, 12)
+        XCTAssertEqual((items.first?["positionMs"] as? NSNumber)?.intValue, 23500)
+        let favorites = try await NativeBridge.shared.accountParse("favorites", body: "{\"code\":0,\"data\":{\"video_shelf_info\":[{\"series_id\":7688558312157088793,\"book_type\":2,\"collect_time\":1700000000}]}}")
+        XCTAssertEqual((favorites["items"] as? [[String: Any]])?.first?["id"] as? String, "7688558312157088793")
+        do {
+            _ = try await NativeBridge.shared.accountParse("favorites", body: "{\"code\":0,\"data\":null}")
+            XCTFail("Invalid library data must remain an error")
+        } catch { XCTAssertEqual(error as? HongguoAccountError, .invalid) }
+    }
+
+    func testOfficialAccountProfileRequestUsesBoundDevice() async throws {
+        try XCTSkipIf(HongguoAccountVault.shared.snapshot.record != nil, "Requires an isolated guest fixture")
+        let suite = "THLRedLook.AccountContract." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("{\"iid\":\"7345678901234567200\",\"device_id\":\"7345678901234567100\",\"cdid\":\"synthetic-device\"}", forKey: "thl_tv_hongguo_device_session")
+        let bridge = NativeBridge(deviceDefaults: defaults)
+        let command = try await bridge.accountRequest("profile")
+        let url = try XCTUnwrap(URLComponents(string: try XCTUnwrap(command["url"] as? String)))
+        XCTAssertEqual(url.host, "api5-normal-sinfonlinea.fqnovel.com")
+        XCTAssertEqual(url.path, "/reading/user/info/v1/")
+        XCTAssertEqual(url.queryItems?.first { $0.name == "device_id" }?.value, "7345678901234567100")
+        XCTAssertNotNil((command["headers"] as? [String: String])?["x-medusa"])
+    }
+
     override func setUp() {
         super.setUp()
         testStarted = Date()
@@ -353,6 +410,39 @@ final class PlaybackTests: XCTestCase {
             }
         }
         print("THL_CONTINUOUS automaticTransitions=7 lastEpisode=8 error=false")
+    }
+
+    func testLiveDebugSourceVideoAudioAndNaturalNext() async throws {
+        try live()
+        await JSSourceService.shared.initialize()
+        let data = try await detail("7695704804978330649")
+        let model = try model(data)
+        defer { model.onDisappear() }
+        let savedGuest = UserDefaults.standard.string(forKey: "thl_tv_hongguo_device_session")
+        await model.preparePlayback(episodeIndex: 3)
+        try await ready(model)
+        XCTAssertEqual(model.currentEpisodeIndex, 3)
+        XCTAssertEqual(model.selectedQuality, 1080)
+        XCTAssertEqual(model.playbackRate, 1)
+        XCTAssertFalse(try XCTUnwrap(model.player).isMuted)
+        XCTAssertGreaterThan(try XCTUnwrap(model.player).volume, 0)
+        let initial = model.currentTime
+        try await wait(seconds: 20) { model.currentTime > initial + 3 }
+        print("THL_DEBUG_TV_NATIVE episode=3 quality=1080 firstFrame=true audioTrack=true volume=positive natural=true seek=false")
+        let deadline = Date().addingTimeInterval(120)
+        while model.currentEpisodeIndex == 3 && Date() < deadline {
+            XCTAssertNil(model.errorMessage)
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+        XCTAssertEqual(model.currentEpisodeIndex, 4)
+        try await ready(model)
+        let next = model.currentTime
+        try await wait(seconds: 20) { model.currentTime > next + 5 }
+        XCTAssertEqual(model.selectedQuality, 1080)
+        XCTAssertFalse(try XCTUnwrap(model.player).isMuted)
+        XCTAssertGreaterThan(try XCTUnwrap(model.player).volume, 0)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "thl_tv_hongguo_device_session"), savedGuest)
+        print("THL_DEBUG_TV_NATIVE_RESULT episode=4 quality=1080 firstFrame=true audioTrack=true volume=positive natural=true seek=false guestPreserved=true")
     }
 
     func testLiveNaturalContinuousPlaybackWithoutSeeking() async throws {

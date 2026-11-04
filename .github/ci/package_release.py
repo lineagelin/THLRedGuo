@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app_build import BuildVariant, add_variant_argument
 from android_apk_checks import verify_plugin_registrant
+from source_manifest import verify_flutter_archive
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
@@ -39,6 +40,7 @@ if options.platform == 'android':
                 raise SystemExit('APK 缺少原生库：' + ', '.join(sorted(missing)))
         target = output / f'{variant.slug}-{version}-{abi}.apk'
         shutil.copy2(source, target)
+        verify_flutter_archive(target, 'assets/flutter_assets/assets/sources/hongguo.js')
         artifacts.append(target)
 else:
     candidates = [
@@ -82,6 +84,7 @@ else:
                 if relative in ('zhenguojian.exe', 'THLRedLook.exe', 'hongguojian.exe'):
                     relative = variant.slug + '.exe'
                 archive.write(source, relative)
+    verify_flutter_archive(target, 'data/flutter_assets/assets/sources/hongguo.js')
     artifacts.append(target)
 
 checksums = []

@@ -27,7 +27,9 @@ Future<void> showDramaActions(
       ('download', '下载选集', Icons.download_outlined),
     if (onSelect != null && store.canDownload)
       ('select', '多选下载', Icons.checklist_rounded),
-    if (history && store.watched(drama.id) != null)
+    if (history &&
+        !store.usesAccountLibrary(drama.id) &&
+        store.watched(drama.id) != null)
       ('removeHistory', '删除这条观看记录', Icons.history_toggle_off),
   ];
   final choice = await showDialog<String>(
@@ -35,35 +37,36 @@ Future<void> showDramaActions(
     builder: (context) => SimpleDialog(
       title: Text(drama.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Row(
-            key: const ValueKey('drama-follow-status'),
-            children: [
-              for (final status in FollowStatus.values) ...[
-                if (status != FollowStatus.values.first)
-                  const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    key: ValueKey('drama-status-${status.name}'),
-                    avatar: Icon(switch (status) {
-                      FollowStatus.planned => Icons.bookmark_add_outlined,
-                      FollowStatus.watching => Icons.play_circle_outline,
-                      FollowStatus.watched => Icons.check_circle_outline,
-                    }, size: 18),
-                    label: Text(status.label),
-                    labelPadding: EdgeInsets.zero,
-                    selected: following?.status == status,
-                    showCheckmark: false,
-                    onSelected: (_) =>
-                        Navigator.pop(context, 'status:${status.name}'),
-                    shape: const StadiumBorder(),
+        if (!store.usesAccountLibrary(drama.id))
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            child: Row(
+              key: const ValueKey('drama-follow-status'),
+              children: [
+                for (final status in FollowStatus.values) ...[
+                  if (status != FollowStatus.values.first)
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      key: ValueKey('drama-status-${status.name}'),
+                      avatar: Icon(switch (status) {
+                        FollowStatus.planned => Icons.bookmark_add_outlined,
+                        FollowStatus.watching => Icons.play_circle_outline,
+                        FollowStatus.watched => Icons.check_circle_outline,
+                      }, size: 18),
+                      label: Text(status.label),
+                      labelPadding: EdgeInsets.zero,
+                      selected: following?.status == status,
+                      showCheckmark: false,
+                      onSelected: (_) =>
+                          Navigator.pop(context, 'status:${status.name}'),
+                      shape: const StadiumBorder(),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
         for (final entry in choices.indexed)
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, entry.$2.$1),
@@ -97,7 +100,10 @@ Future<void> showDramaActions(
     case 'continue':
       onContinue?.call();
     case 'favorite':
-      await saveUserChange(context, () => store.toggleFavorite(drama));
+      await saveUserChange(
+        context,
+        () => store.setFavorite(drama, following == null),
+      );
     case 'read':
       await saveUserChange(context, () => store.markUpdatesRead(drama.id));
     case 'download':
