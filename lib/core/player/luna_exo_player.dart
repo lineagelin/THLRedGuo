@@ -136,10 +136,18 @@ class _LunaVideoPlayerController extends VideoPlayerController {
 /// 采用和 LunaTV-Mobile 完全相同架构的 ExoPlayer (AndroidX Media3) 播放器封装，
 /// 同时对上层播控 UI (PlayerControls & TelevisionControls) 暴露完全兼容的 Player 契约。
 class LunaExoPlayer implements Player {
-  LunaExoPlayer({this.initializationTimeout = const Duration(seconds: 30)}) {
+  LunaExoPlayer({
+    this.initializationTimeout = const Duration(seconds: 30),
+    this.streamingPlayerFactory,
+    this.streamingVideoFactory,
+  }) {
     state = const PlayerState().copyWith(volume: 100.0);
   }
 
+  @visibleForTesting
+  final Player Function()? streamingPlayerFactory;
+  @visibleForTesting
+  final kit.VideoController? Function(Player)? streamingVideoFactory;
   VideoPlayerController? _controller;
   final Duration initializationTimeout;
   VoidCallback? _valueListener;
@@ -208,63 +216,91 @@ class LunaExoPlayer implements Player {
     if (!RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(key)) {
       throw const FormatException('视频内容密钥无效');
     }
-    await stop();
-    if (_disposed) return;
-    MediaKit.ensureInitialized();
-    final generation = ++_openGeneration;
+    var native = _streamPlayer;
     final volume = state.volume;
     final rate = state.rate;
-    final native = Player(
-      configuration: const PlayerConfiguration(
-        bufferSize: 32 * 1024 * 1024,
-        logLevel: MPVLogLevel.error,
-      ),
-    );
-    _streamPlayer = native;
-    _streamVideo = kit.VideoController(native);
-    WidgetsBinding.instance.scheduleFrame();
-    void mirror<T>(
-      Stream<T> input,
-      StreamController<T> output, {
-      bool repaint = false,
-    }) {
-      _streamSubscriptions.add(
-        input.listen((value) {
-          if (_disposed ||
-              generation != _openGeneration ||
-              !identical(native, _streamPlayer)) {
-            return;
-          }
-          state = native.state;
-          _safeAdd(output, value);
-          if (repaint) revision.value++;
-        }),
-      );
-    }
+    // Keep the player, render surface and audio output alive across episodes.
+    // Reopening a cached media should not tear down the whole native backend.
+    if (native == null) {
+      await stop();
+      if (_disposed) return;
+      if (streamingPlayerFactory == null) MediaKit.ensureInitialized();
+      native =
+          streamingPlayerFactory?.call() ??
+          Player(
+            configuration: const PlayerConfiguration(
+              bufferSize: 32 * 1024 * 1024,
+              logLevel: MPVLogLevel.error,
+            ),
+          );
+      _streamPlayer = native;
+      final videoFactory = streamingVideoFactory;
+      _streamVideo = videoFactory == null
+          ? kit.VideoController(native)
+          : videoFactory(native);
+      final current = native;
+      void mirror<T>(
+        Stream<T> input,
+        StreamController<T> output, {
+        bool repaint = false,
+      }) {
+        _streamSubscriptions.add(
+          input.listen((value) {
+            if (_disposed || !identical(current, _streamPlayer)) return;
+            state = current.state;
+            _safeAdd(output, value);
+            if (repaint) revision.value++;
+          }),
+        );
+      }
 
-    mirror(native.stream.position, stream.positionController);
-    mirror(native.stream.duration, stream.durationController);
-    mirror(native.stream.buffer, stream.bufferController);
-    mirror(native.stream.playing, stream.playingController, repaint: true);
-    mirror(native.stream.buffering, stream.bufferingController, repaint: true);
-    mirror(native.stream.completed, stream.completedController, repaint: true);
-    mirror(
-      native.stream.videoParams,
-      stream.videoParamsController,
-      repaint: true,
-    );
-    mirror(native.stream.error, stream.errorController);
-    mirror(native.stream.volume, stream.volumeController);
-    mirror(native.stream.rate, stream.rateController);
+      mirror(native.stream.position, stream.positionController);
+      mirror(native.stream.duration, stream.durationController);
+      mirror(native.stream.buffer, stream.bufferController);
+      mirror(native.stream.playing, stream.playingController, repaint: true);
+      mirror(
+        native.stream.buffering,
+        stream.bufferingController,
+        repaint: true,
+      );
+      mirror(
+        native.stream.completed,
+        stream.completedController,
+        repaint: true,
+      );
+      mirror(
+        native.stream.videoParams,
+        stream.videoParamsController,
+        repaint: true,
+      );
+      mirror(native.stream.error, stream.errorController);
+      mirror(native.stream.volume, stream.volumeController);
+      mirror(native.stream.rate, stream.rateController);
+    }
+    final generation = ++_openGeneration;
     try {
       final backend = native.platform as NativePlayer;
       await backend.setProperty('demuxer-lavf-o', 'decryption_key=$key');
       await backend.setProperty('network-timeout', '20');
+      // Cached initial bytes are available locally; do not impose an additional
+      // startup cache pause before showing the first decoded frame.
+      await backend.setProperty('cache-pause-initial', 'no');
       await native.setVolume(volume);
       await native.setRate(rate);
       if (_disposed || generation != _openGeneration) return;
+      state = state.copyWith(
+        position: Duration.zero,
+        duration: Duration.zero,
+        width: 0,
+        height: 0,
+        completed: false,
+        buffering: true,
+      );
       await native.open(media, play: play);
-      if (!_disposed && generation == _openGeneration) revision.value++;
+      if (!_disposed && generation == _openGeneration) {
+        state = native.state;
+        revision.value++;
+      }
     } catch (_) {
       if (identical(native, _streamPlayer)) await stop();
       rethrow;
@@ -519,6 +555,7 @@ class LunaExoPlayer implements Player {
       } catch (_) {}
     }
 
+    await c.setVolume(state.volume.clamp(0.0, 100.0) / 100.0);
     if (play) {
       try {
         await c.play();
@@ -543,7 +580,9 @@ class LunaExoPlayer implements Player {
   void _startWatchdog(VideoPlayerController c, int gen) {
     _watchdogTimer?.cancel();
     _consecutiveZeroSizeTicks = 0;
-    _watchdogTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) async {
+    _watchdogTimer = Timer.periodic(const Duration(milliseconds: 1000), (
+      timer,
+    ) async {
       if (_disposed || gen != _openGeneration || _controller != c) {
         timer.cancel();
         return;
@@ -557,7 +596,9 @@ class LunaExoPlayer implements Player {
             '[ExoPlayer Watchdog] 警告: 正在播放中但视频画面尺寸为 0x0 (tick=$_consecutiveZeroSizeTicks)',
           );
           if (_consecutiveZeroSizeTicks >= 2) {
-            DiaryService.add('[ExoPlayer Watchdog] 尝试触发硬解管线冲洗 (Keyframe Flush)...');
+            DiaryService.add(
+              '[ExoPlayer Watchdog] 尝试触发硬解管线冲洗 (Keyframe Flush)...',
+            );
             try {
               final pos = c.value.position;
               await c.seekTo(pos);

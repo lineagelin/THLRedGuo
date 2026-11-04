@@ -1,151 +1,165 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
-
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
+import 'package:THLRedLook/core/player/playback_stream_buffer.dart';
+import 'package:THLRedLook/utils/diary/diary_service.dart';
+
+class _CachedEpisode {
+  _CachedEpisode(this.plan, this.buffer, this.expires);
+  final PlaybackPlan plan;
+  final PlaybackStreamBuffer buffer;
+  final DateTime expires;
+  bool used = false, released = false;
+}
 
 class PlaybackPreloader extends ChangeNotifier {
   PlaybackPreloader(this.repository, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
-
+  final AppRepository repository;
+  final DateTime Function() _now;
+  final _cache = <String, _CachedEpisode>{};
+  final _wanted = <String, (Drama, Episode, int, bool)>{};
+  final _retry = <String, DateTime>{};
+  final _retired = <_CachedEpisode>[];
+  _CachedEpisode? _active;
+  PlaybackStreamBuffer? _warming;
+  bool _closed = false, _pumping = false, _paused = false;
+  int _revision = 0;
+  String? _protectedKey;
+  String error = '';
+  bool get loading => _pumping;
+  String get status => _cache.isNotEmpty
+      ? '已缓存附近 ${_cache.length} 个视频'
+      : loading
+      ? '正在缓存附近视频'
+      : error.isEmpty
+      ? '提前缓存前后各两集'
+      : '预加载暂不可用，切集时会重新获取';
   static bool shouldPrepare({
     required Duration duration,
     required Duration position,
     double rate = 1,
-  }) {
-    if (duration <= Duration.zero ||
-        position < const Duration(milliseconds: 500)) {
-      return false;
-    }
-    final remaining = duration - position;
-    final speed = rate.isFinite && rate > 0 ? rate.clamp(0.25, 4) : 1;
-    return remaining > Duration.zero &&
-        remaining.inMilliseconds / speed <= 20000;
-  }
-
-  final AppRepository repository;
-  final DateTime Function() _now;
-  PlaybackPlan? _ready;
-  String? _identity;
-  Timer? _delay;
-  DateTime _expires = DateTime(2000), _retryAt = DateTime(2000);
-  int _generation = 0;
-  bool _closed = false, loading = false;
-  String error = '';
-  void _release(PlaybackPlan plan) =>
-      unawaited(repository.release(plan.session).catchError((Object _) {}));
-
-  String get status {
-    if (_ready != null && _now().isBefore(_expires)) {
-      final bytes = _ready!.prefetchedBytes;
-      return _ready!.local
-          ? '下一集已下载'
-          : bytes > 0
-          ? '下一集已准备 · 预取 ${(bytes / 1024).ceil()} KB'
-          : '下一集播放地址已准备';
-    }
-    if (loading || _delay != null) return '正在准备下一集';
-    return error.isNotEmpty ? '下一集预加载暂不可用，切集时会重新获取' : '播放后段提前准备下一集';
-  }
-
+  }) =>
+      position >= const Duration(seconds: 1) &&
+      (duration <= Duration.zero || position < duration);
   String _key(Drama drama, Episode episode, int quality, bool online) =>
       '${drama.id}\u0000${episode.number}\u0000$quality\u0000$online';
-
-  Future<void> _warmupStream(PlaybackPlan plan) async {
-    if (plan.local || plan.url.isEmpty) return;
-    HttpClient? client;
-    try {
-      final uri = Uri.tryParse(plan.url);
-      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
-        return;
-      }
-      client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
-      final request = await client.getUrl(uri);
-      for (final entry in plan.headers.entries) {
-        request.headers.set(entry.key, entry.value);
-      }
-      request.headers.set('Range', 'bytes=0-65535');
-      final response = await request.close().timeout(
-        const Duration(seconds: 3),
-      );
-      await response.drain<void>().timeout(const Duration(seconds: 2));
-    } catch (_) {
-    } finally {
-      client?.close(force: true);
-    }
-  }
-
   void prepare(
     Drama drama,
     Episode episode, {
     int quality = 0,
     bool online = false,
+  }) => prepareTargets([(drama, episode)], quality: quality, online: online);
+  void prepareWindow(
+    Drama drama,
+    List<Episode> episodes,
+    int index, {
+    int quality = 0,
+  }) => prepareTargets([
+    for (final delta in [1, -1, 2, -2])
+      if (index + delta >= 0 && index + delta < episodes.length)
+        (drama, episodes[index + delta]),
+  ], quality: quality);
+  void prepareTargets(
+    List<(Drama, Episode)> targets, {
+    int quality = 0,
+    bool online = false,
+    (Drama, Episode)? current,
   }) {
     if (_closed) return;
-    final identity = _key(drama, episode, quality, online);
-    if (_identity != identity) {
-      clear();
-      _identity = identity;
+    _protectedKey = current == null
+        ? null
+        : _key(current.$1, current.$2, quality, online);
+    _paused = false;
+    _wanted.clear();
+    for (final target in targets.take(4)) {
+      _wanted[_key(target.$1, target.$2, quality, online)] = (
+        target.$1,
+        target.$2,
+        quality,
+        online,
+      );
     }
-    if (_ready != null && !_now().isBefore(_expires)) {
-      final expired = _ready!;
-      _ready = null;
-      _release(expired);
+    for (final key in _cache.keys.toList()) {
+      final entry = _cache[key]!;
+      if (((!_wanted.containsKey(key) && key != _protectedKey) ||
+              !_now().isBefore(entry.expires)) &&
+          !identical(entry, _active)) {
+        _cache.remove(key);
+        if (!identical(entry, _active)) _release(entry);
+      }
     }
-    if (_ready != null ||
-        loading ||
-        _delay != null ||
-        _now().isBefore(_retryAt)) {
-      return;
-    }
-    final ticket = _generation;
-    _delay = Timer(const Duration(milliseconds: 50), () async {
-      _delay = null;
-      loading = true;
-      notifyListeners();
-      try {
-        final plan = await repository.preload(
-          drama,
-          episode,
-          quality: quality,
-          online: online,
-        );
-        if (_closed || ticket != _generation) {
-          if (plan != null) await repository.release(plan.session);
-          return;
-        }
-        if (plan == null || plan.url.isEmpty) throw AppFailure('未取得预加载结果');
-        var expires = _now().add(const Duration(minutes: 5));
-        if (plan.expiresAt > 0) {
-          final authorizationExpiry = DateTime.fromMillisecondsSinceEpoch(
-            plan.expiresAt,
-          ).subtract(const Duration(seconds: 5));
-          if (authorizationExpiry.isBefore(expires)) {
-            expires = authorizationExpiry;
+    if (!_pumping) unawaited(_pump());
+  }
+
+  // Source lookups run serially so speculative requests cannot cancel each other.
+  Future<void> _pump() async {
+    _pumping = true;
+    notifyListeners();
+    try {
+      while (!_closed && !_paused) {
+        final key = _wanted.keys
+            .where(
+              (key) =>
+                  !_cache.containsKey(key) &&
+                  !_now().isBefore(_retry[key] ?? DateTime(2000)),
+            )
+            .firstOrNull;
+        if (key == null) break;
+        final target = _wanted[key]!;
+        final revision = _revision;
+        PlaybackPlan? source;
+        PlaybackStreamBuffer? buffer;
+        try {
+          source = await repository.preload(
+            target.$1,
+            target.$2,
+            quality: target.$3,
+            online: target.$4,
+          );
+          if (source == null || source.url.isEmpty) {
+            throw AppFailure('未取得预加载结果');
+          }
+          if (_closed || revision != _revision || !_wanted.containsKey(key)) {
+            await repository.release(source.session);
+            continue;
+          }
+          var expires = _now().add(const Duration(minutes: 5));
+          if (source.expiresAt > 0) {
+            final limit = DateTime.fromMillisecondsSinceEpoch(
+              source.expiresAt,
+            ).subtract(const Duration(seconds: 5));
+            if (limit.isBefore(expires)) expires = limit;
+          }
+          if (!expires.isAfter(_now())) throw AppFailure('播放凭证即将过期');
+          buffer = PlaybackStreamBuffer();
+          _warming = buffer;
+          final plan = await buffer.open(source);
+          if (identical(_warming, buffer)) _warming = null;
+          if (_closed || revision != _revision || !_wanted.containsKey(key)) {
+            await buffer.close();
+            await repository.release(source.session);
+            continue;
+          }
+          _cache[key] = _CachedEpisode(plan, buffer, expires);
+          error = '';
+          DiaryService.add(
+            '[Preload] 附近视频已缓存: 剧=${target.$1.cleanSourceId}, 集=${target.$2.number}, 缓存=${plan.prefetchedBytes} bytes',
+          );
+        } catch (failure) {
+          await buffer?.close();
+          if (source != null) await repository.release(source.session);
+          if (revision == _revision) {
+            error = failure.toString();
+            _retry[key] = _now().add(const Duration(seconds: 15));
           }
         }
-        if (!expires.isAfter(_now())) {
-          _release(plan);
-          throw AppFailure('下一集播放凭证即将过期');
-        }
-        _ready = plan;
-        _expires = expires;
-        error = '';
-        unawaited(_warmupStream(plan));
-      } catch (failure) {
-        if (_closed || ticket != _generation) return;
-        error = failure.toString();
-        _retryAt = _now().add(const Duration(seconds: 15));
-      } finally {
-        if (!_closed && ticket == _generation) {
-          loading = false;
-          notifyListeners();
-        }
       }
-    });
-    notifyListeners();
+    } finally {
+      _pumping = false;
+      if (!_closed) notifyListeners();
+    }
   }
 
   PlaybackPlan? take(
@@ -154,43 +168,83 @@ class PlaybackPreloader extends ChangeNotifier {
     int quality = 0,
     bool online = false,
   }) {
-    final result =
-        _identity == _key(drama, episode, quality, online) &&
-            _now().isBefore(_expires)
-        ? _ready
+    final entry = _cache[_key(drama, episode, quality, online)];
+    final result = entry != null && _now().isBefore(entry.expires)
+        ? entry
         : null;
-    if (result != null) _ready = null;
-    clear();
-    return result;
+    final previous = _active;
+    _active = result;
+    if (previous != null && !identical(previous, result)) {
+      _retired.add(previous);
+    }
+    if (result != null) {
+      result.used = true;
+      DiaryService.add(
+        '[Preload] 切集复用: 剧=${drama.cleanSourceId}, 集=${episode.number}, 缓存=${result.plan.prefetchedBytes} bytes',
+      );
+    }
+    return result?.plan;
   }
 
   void pause() {
-    final changed = _delay != null;
-    _delay?.cancel();
-    _delay = null;
-    if (changed && !_closed) notifyListeners();
+    _paused = true;
+  }
+
+  void _release(_CachedEpisode entry) {
+    if (entry.released) return;
+    entry.released = true;
+    unawaited(entry.buffer.close());
+    if (!entry.used) {
+      unawaited(
+        repository.release(entry.plan.session).catchError((Object _) {}),
+      );
+    }
   }
 
   void clear() {
-    _generation++;
-    if (loading) {
+    _revision++;
+    _wanted.clear();
+    _protectedKey = null;
+    _retry.clear();
+    _paused = true;
+    if (_pumping) {
       unawaited(repository.cancelPreload().catchError((Object _) {}));
     }
-    loading = false;
-    pause();
-    final old = _ready;
-    _ready = null;
-    _identity = null;
-    _retryAt = DateTime(2000);
+    unawaited(_warming?.close());
+    _warming = null;
+    for (final entry in _cache.values) {
+      if (!identical(entry, _active)) _release(entry);
+    }
+    _cache.clear();
     error = '';
-    if (old != null) _release(old);
     if (!_closed) notifyListeners();
+  }
+
+  Future<void> releaseRetired() async {
+    for (final key in _cache.keys.toList()) {
+      final entry = _cache[key]!;
+      if (!_wanted.containsKey(key) &&
+          key != _protectedKey &&
+          !identical(entry, _active)) {
+        _cache.remove(key);
+        _release(entry);
+      }
+    }
+    for (final entry in _retired.toSet()) {
+      if (!identical(entry, _active) && !_cache.containsValue(entry)) {
+        _release(entry);
+      }
+    }
+    _retired.clear();
   }
 
   @override
   void dispose() {
     _closed = true;
     clear();
+    if (_active != null) _release(_active!);
+    _active = null;
+    unawaited(releaseRetired());
     super.dispose();
   }
 }

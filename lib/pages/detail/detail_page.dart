@@ -20,6 +20,9 @@ import 'package:THLRedLook/pages/sources/sources_page.dart';
 import 'package:THLRedLook/views/browser/episode_browser.dart';
 import 'package:THLRedLook/core/store/follow_state.dart';
 import 'package:THLRedLook/core/series/hongguo_series.dart';
+import 'package:THLRedLook/views/drama/drama_mobile_detail_view.dart';
+import 'package:THLRedLook/pages/player/playback_launch_page.dart';
+import 'package:THLRedLook/utils/player/player_dialog_helper.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({
@@ -33,6 +36,8 @@ class DetailScreen extends StatefulWidget {
     this.initialSeriesEntries,
     this.playerFactory,
     this.videoBuilder,
+    this.onPlayRequested,
+    this.onOpenDrama,
   });
   final Drama drama;
   final DramaDetail? initialDetail;
@@ -41,6 +46,8 @@ class DetailScreen extends StatefulWidget {
   final bool resumeOnOpen;
   final bool downloadOnOpen;
   final List<HongguoSeriesEntry>? initialSeriesEntries;
+  final ValueChanged<int>? onPlayRequested;
+  final ValueChanged<Drama>? onOpenDrama;
   @visibleForTesting
   final Player Function()? playerFactory;
   @visibleForTesting
@@ -62,6 +69,8 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _initialActionHandled = false;
   late final int _profileEpoch;
   List<HongguoSeriesEntry>? _seriesEntries;
+  List<Drama> _recommendations = const [];
+  String? _recommendationAnchor;
   Widget? get _sourceDiagnostics => widget.repository.supportsSourceManagement
       ? SourceDiagnosticsButton(
           repository: widget.repository,
@@ -79,6 +88,7 @@ class _DetailScreenState extends State<DetailScreen> {
     if (widget.initialDetail != null) {
       _detail = widget.initialDetail;
       _loading = false;
+      unawaited(_loadRecommendations(_detail!.drama));
     } else {
       _load();
     }
@@ -134,18 +144,7 @@ class _DetailScreenState extends State<DetailScreen> {
       final merged = widget.repository.catalogUpdates
           .current(drama)
           .merge(detail.drama);
-      final finalEpisodes = detail.episodes.isNotEmpty
-          ? detail.episodes
-          : (merged.episodes > 0
-                ? List.generate(
-                    merged.episodes,
-                    (index) => Episode({
-                      'id': '${merged.cleanSourceId}_${index + 1}',
-                      'title': '第 ${index + 1} 集',
-                      'currentEpisode': index + 1,
-                    }, index + 1),
-                  )
-                : <Episode>[]);
+      final finalEpisodes = detail.episodes;
       setState(() {
         _detail = DramaDetail(merged, finalEpisodes, warning: detail.warning);
         _seriesEntries = hongguoSeriesEntries(merged, [
@@ -162,6 +161,7 @@ class _DetailScreenState extends State<DetailScreen> {
       });
       widget.repository.catalogUpdates.publish(merged, retryCover: true);
       unawaited(_supplement(merged, generation));
+      unawaited(_loadRecommendations(merged));
       unawaited(_discoverSeasons(merged, generation));
       await saveUserChange(context, () => widget.store.refreshDrama(merged));
       if (mounted &&
@@ -237,6 +237,31 @@ class _DetailScreenState extends State<DetailScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadRecommendations(Drama drama) async {
+    if (_recommendationAnchor == drama.id) return;
+    _recommendationAnchor = drama.id;
+    try {
+      final page = await widget.repository.recommendations(
+        drama.category.contains('漫') ? 'comic_series' : 'short_play',
+        source: drama.source,
+      );
+      if (!mounted ||
+          _recommendationAnchor != drama.id ||
+          widget.store.profileEpoch != _profileEpoch) {
+        return;
+      }
+      final seen = <String>{drama.id};
+      setState(
+        () => _recommendations = page.items
+            .where((item) => seen.add(item.id))
+            .take(8)
+            .toList(),
+      );
+    } catch (_) {
+      /* This source has no recommendations; omit the section. */
+    }
+  }
+
   Future<void> _download() async {
     final detail = _detail;
     if (detail == null ||
@@ -310,6 +335,10 @@ class _DetailScreenState extends State<DetailScreen> {
         !widget.store.allowsSource(detail.drama.source)) {
       return;
     }
+    if (widget.onPlayRequested != null) {
+      widget.onPlayRequested!(index);
+      return;
+    }
     final saved = widget.store.watched(detail.drama.id);
     final position =
         resume &&
@@ -362,6 +391,11 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _openSeriesDrama(Drama drama) async {
+    if (widget.onOpenDrama != null &&
+        drama.id != (_detail?.drama.id ?? widget.drama.id)) {
+      widget.onOpenDrama!(drama);
+      return;
+    }
     if (_profileEpoch != widget.store.profileEpoch ||
         drama.id == (_detail?.drama.id ?? widget.drama.id)) {
       return;
@@ -426,6 +460,59 @@ class _DetailScreenState extends State<DetailScreen> {
         widget.store.profileEpoch == _profileEpoch &&
         (widget.store.allowsSource(dramaSource) ||
             widget.store.allowsSource(widget.store.source));
+    if (AppLayout.isMobile(context)) {
+      return DramaMobileDetailView(
+        drama: drama,
+        episodes: episodes,
+        repository: widget.repository,
+        currentIndex: resumeIndex,
+        hasWatchHistory: watched != null,
+        favorite: widget.store.following(drama.id) != null,
+        loading: _loading,
+        error: _error,
+        allowed: allowed,
+        onFavorite: () =>
+            saveUserChange(context, () => widget.store.toggleFavorite(drama)),
+        onPlay: (index) => _play(index, resume: true),
+        onAllEpisodes: () async {
+          final index = await PlayerDialogHelper.openEpisodesSheet(
+            context: context,
+            episodes: episodes,
+            currentIndex: resumeIndex,
+            dramaTitle: drama.title,
+            drama: drama,
+            repository: widget.repository,
+            store: widget.store,
+            seriesEntries: _seriesEntries ?? const [],
+            currentDramaId: drama.id,
+            onSeasonSelected: _openSeriesDrama,
+          );
+          if (index != null && mounted) await _play(index);
+        },
+        onBack: () => Navigator.of(context).maybePop(),
+        onCover: () => _showCoverBigImage(context, drama),
+        onRefresh: _load,
+        seriesSelector: (_seriesEntries?.length ?? 0) > 1
+            ? _seriesSelector(drama)
+            : null,
+        recommendations: _recommendations,
+        onRecommendation: (item) {
+          if (widget.onOpenDrama != null) {
+            widget.onOpenDrama!(item);
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PlaybackLaunchScreen(
+                drama: item,
+                repository: widget.repository,
+                store: widget.store,
+              ),
+            ),
+          );
+        },
+      );
+    }
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
@@ -535,10 +622,9 @@ class _DetailScreenState extends State<DetailScreen> {
                       colors: [
                         AppColors.blackWithAlpha(0.55),
                         AppColors.blackWithAlpha(0.80),
-                        Theme.of(context)
-                            .colorScheme
-                            .surface
-                            .withValues(alpha: 0.96),
+                        Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.96),
                         Theme.of(context).colorScheme.surface,
                       ],
                       stops: const [0.0, 0.45, 0.82, 1.0],
@@ -579,13 +665,18 @@ class _DetailScreenState extends State<DetailScreen> {
                                     _seriesSelector(drama),
                                     Expanded(
                                       child: AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 200),
-                                        child: _loading ||
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        child:
+                                            _loading ||
                                                 _error != null ||
                                                 episodes.isEmpty
                                             ? _episodeStatus()
                                             : EpisodeBrowser(
-                                                key: const ValueKey('episode-browser'),
+                                                key: const ValueKey(
+                                                  'episode-browser',
+                                                ),
                                                 episodes: episodes,
                                                 currentNumber: watched?.episode,
                                                 onSelected: (index) =>
@@ -620,7 +711,8 @@ class _DetailScreenState extends State<DetailScreen> {
                               ),
                             ),
                             SliverToBoxAdapter(child: _seriesSelector(drama)),
-                            if (_error != null || (!_loading && episodes.isEmpty))
+                            if (_error != null ||
+                                (!_loading && episodes.isEmpty))
                               SliverFillRemaining(
                                 hasScrollBody: false,
                                 child: _episodeStatus(),
@@ -774,7 +866,9 @@ class _DetailScreenState extends State<DetailScreen> {
                               foregroundColor: AppColors.white,
                               disabledBackgroundColor: AppColors.hongguoRed
                                   .withValues(alpha: 0.65),
-                              disabledForegroundColor: AppColors.whiteWithAlpha(0.85),
+                              disabledForegroundColor: AppColors.whiteWithAlpha(
+                                0.85,
+                              ),
                               shape: const StadiumBorder(),
                               minimumSize: const Size(0, 52),
                               padding: const EdgeInsets.symmetric(
@@ -794,8 +888,8 @@ class _DetailScreenState extends State<DetailScreen> {
                               child: Text(
                                 _loading
                                     ? (watched != null
-                                        ? '继续播放 · 第 ${watched.episode} 集'
-                                        : '立即播放')
+                                          ? '继续播放 · 第 ${watched.episode} 集'
+                                          : '立即播放')
                                     : (watched != null && episodes.isNotEmpty
                                           ? '继续播放 · 第 ${episodes[resumeIndex].number} 集'
                                           : '立即播放'),
@@ -853,9 +947,9 @@ class _DetailScreenState extends State<DetailScreen> {
                   '选集$total',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
               SizedBox(
@@ -1222,9 +1316,8 @@ class _DetailScreenState extends State<DetailScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: colors.surfaceContainerHighest.withValues(
-                                  alpha: 0.5,
-                                ),
+                                color: colors.surfaceContainerHighest
+                                    .withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: Text(
@@ -1267,6 +1360,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       ),
                     ),
                   if (drama.vip &&
+                      !AppLayout.isMobile(context) &&
                       drama.source != 'hongguo' &&
                       !drama.id.startsWith('hongguo:'))
                     Padding(
@@ -1364,195 +1458,220 @@ class _DetailScreenState extends State<DetailScreen> {
           ? const SizedBox.shrink()
           : Container(
               margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurfaceHighest,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.whiteWithAlpha(0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.layers_rounded,
-                size: 18,
-                color: AppColors.hongguoRed,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.darkSurfaceHighest,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.whiteWithAlpha(0.08)),
               ),
-              const SizedBox(width: 6),
-              const Text(
-                '系列多季',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.accentTrack35,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '共 ${entries.length} 季',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.hongguoRed,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              const Text(
-                '快速切季',
-                style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final entry in entries) ...[
-                  Builder(
-                    builder: (context) {
-                      final isCurrent = entry.drama.id == drama.id;
-                      final watched = widget.store.watched(entry.drama.id);
-                      final isNew = notices[entry.drama.id]?.read == false;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: InkWell(
-                          key: ValueKey('series-${entry.drama.id}'),
-                          onTap: isCurrent || !entry.playable
-                              ? null
-                              : () => _openSeriesDrama(entry.drama),
-                          borderRadius: BorderRadius.circular(14),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: isCurrent ? AppGradients.primary : null,
-                              color: isCurrent
-                                  ? null
-                                  : AppColors.darkSurfaceElevated,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: isCurrent ? AppShadows.pillGlow : null,
-                              border: Border.all(
-                                color: isCurrent
-                                    ? AppColors.hongguoRed
-                                    : (isNew
-                                          ? AppColors.hongguoRedWithAlpha(0.6)
-                                          : AppColors.whiteWithAlpha(0.12)),
-                                width: isCurrent ? 1.2 : 0.8,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      entry.label,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                    if (isCurrent) ...[
-                                      const SizedBox(width: 4),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 1,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.whiteWithAlpha(0.25),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          '当前',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                    ] else if (isNew) ...[
-                                      const SizedBox(width: 4),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 1,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.hongguoRed,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'NEW',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 160,
-                                  ),
-                                  child: Text(
-                                    watched != null
-                                        ? '看至第${watched.episode}集'
-                                        : (isCurrent
-                                              ? '正在浏览'
-                                              : entry.drama.title),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: isCurrent
-                                          ? AppColors.whiteWithAlpha(0.85)
-                                          : AppColors.textTertiary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.layers_rounded,
+                        size: 18,
+                        color: AppColors.hongguoRed,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        '系列多季',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentTrack35,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '共 ${entries.length} 季',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.hongguoRed,
                           ),
                         ),
-                      );
-                    },
+                      ),
+                      const Spacer(),
+                      const Text(
+                        '快速切季',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final entry in entries) ...[
+                          Builder(
+                            builder: (context) {
+                              final isCurrent = entry.drama.id == drama.id;
+                              final watched = widget.store.watched(
+                                entry.drama.id,
+                              );
+                              final isNew =
+                                  notices[entry.drama.id]?.read == false;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: InkWell(
+                                  key: ValueKey('series-${entry.drama.id}'),
+                                  onTap: isCurrent || !entry.playable
+                                      ? null
+                                      : () => _openSeriesDrama(entry.drama),
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: isCurrent
+                                          ? AppGradients.primary
+                                          : null,
+                                      color: isCurrent
+                                          ? null
+                                          : AppColors.darkSurfaceElevated,
+                                      borderRadius: BorderRadius.circular(14),
+                                      boxShadow: isCurrent
+                                          ? AppShadows.pillGlow
+                                          : null,
+                                      border: Border.all(
+                                        color: isCurrent
+                                            ? AppColors.hongguoRed
+                                            : (isNew
+                                                  ? AppColors.hongguoRedWithAlpha(
+                                                      0.6,
+                                                    )
+                                                  : AppColors.whiteWithAlpha(
+                                                      0.12,
+                                                    )),
+                                        width: isCurrent ? 1.2 : 0.8,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              entry.label,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            if (isCurrent) ...[
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 4,
+                                                      vertical: 1,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      AppColors.whiteWithAlpha(
+                                                        0.25,
+                                                      ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: const Text(
+                                                  '当前',
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ] else if (isNew) ...[
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 4,
+                                                      vertical: 1,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.hongguoRed,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: const Text(
+                                                  'NEW',
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 160,
+                                          ),
+                                          child: Text(
+                                            watched != null
+                                                ? '看至第${watched.episode}集'
+                                                : (isCurrent
+                                                      ? '正在浏览'
+                                                      : entry.drama.title),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isCurrent
+                                                  ? AppColors.whiteWithAlpha(
+                                                      0.85,
+                                                    )
+                                                  : AppColors.textTertiary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
+    );
+  }
 
   Color _followStatusColor(FollowStatus status) {
     switch (status) {
@@ -1652,8 +1771,9 @@ class _DetailScreenState extends State<DetailScreen> {
                       status.label,
                       style: TextStyle(
                         fontSize: 15,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: isSelected ? statusColor : colors.onSurface,
                       ),
                     ),
@@ -1669,11 +1789,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ),
               if (isSelected)
-                Icon(
-                  Icons.check_circle_rounded,
-                  color: statusColor,
-                  size: 22,
-                )
+                Icon(Icons.check_circle_rounded, color: statusColor, size: 22)
               else
                 Icon(
                   Icons.circle_outlined,
@@ -1705,7 +1821,10 @@ class _DetailScreenState extends State<DetailScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                margin: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(24),
@@ -1732,8 +1851,9 @@ class _DetailScreenState extends State<DetailScreen> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                            color:
-                                colors.onSurfaceVariant.withValues(alpha: 0.3),
+                            color: colors.onSurfaceVariant.withValues(
+                              alpha: 0.3,
+                            ),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -1750,9 +1870,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                   style: Theme.of(sheetContext)
                                       .textTheme
                                       .titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                      ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -1895,8 +2013,9 @@ class _DetailScreenState extends State<DetailScreen> {
                       style: TextStyle(
                         color: isFollowed ? statusColor : colors.onSurface,
                         fontSize: 11.5,
-                        fontWeight:
-                            isFollowed ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: isFollowed
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                       ),
                     ),
                     const SizedBox(width: 2),

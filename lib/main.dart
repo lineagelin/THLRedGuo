@@ -150,13 +150,11 @@ class _AppBootstrapState extends State<AppBootstrap>
       final jsSourceService = JsSourceService(repository);
       await jsSourceService.initialize();
       if (mounted) {
-        final privacy = PrivacyLockController(preferences);
         final localStore = LocalStore(preferences);
         if (localStore.source.isNotEmpty) {
           await jsSourceService.switchSource(localStore.source);
         }
         setState(() {
-          privacyController = privacy;
           store = localStore;
           repository.access = store;
           PipManager.instance.initialize(
@@ -276,7 +274,7 @@ class DuanjuApp extends StatelessWidget {
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
-    themeMode: AppTheme.mode(store?.themeMode ?? 'system'),
+    themeMode: AppTheme.mode(store?.themeMode ?? 'dark'),
     builder: (context, child) {
       final mode = store?.displayMode ?? 'auto';
       final tv = mode == 'television' || mode == 'auto' && television;

@@ -31,10 +31,14 @@ class LocalSnapshot {
     'profiles',
     'activeProfile',
     'displayMode',
+    // Read-only compatibility for snapshots created before adaptive discovery.
+    'discoveryColumns',
     'themeMode',
     'keepScreenOn',
     'autoExport',
     'exportPosters',
+    // Accepted only for compatibility with existing snapshots and backups.
+    // Source password locks have been removed from the application.
     'sourceGateEnabled',
     'sourceGateOff',
     'sourceGateSalt',

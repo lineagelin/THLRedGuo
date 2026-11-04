@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/views/common/widgets.dart';
+import 'package:THLRedLook/views/player/player_danmaku_sheet_view.dart';
 
 class PlaybackSettingsPage extends StatelessWidget {
-  const PlaybackSettingsPage({
-    super.key,
-    required this.store,
-  });
+  const PlaybackSettingsPage({super.key, required this.store});
 
   final LocalStore store;
 
@@ -33,16 +31,20 @@ class PlaybackSettingsPage extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 '默认起播画质',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
             for (final q in qualities)
               ListTile(
                 title: Text(q['label'] as String),
-                trailing: store.playbackPreferences.quality == (q['value'] as int)
-                    ? const Icon(Icons.check_rounded, color: AppColors.hongguoRed)
+                trailing:
+                    store.playbackPreferences.quality == (q['value'] as int)
+                    ? const Icon(
+                        Icons.check_rounded,
+                        color: AppColors.hongguoRed,
+                      )
                     : null,
                 onTap: () => Navigator.pop(context, q['value'] as int),
               ),
@@ -52,7 +54,10 @@ class PlaybackSettingsPage extends StatelessWidget {
     );
     if (selected != null && context.mounted) {
       final updated = store.playbackPreferences.copyWith(quality: selected);
-      await saveUserChange(context, () => store.setPlaybackPreferences(updated));
+      await saveUserChange(
+        context,
+        () => store.setPlaybackPreferences(updated),
+      );
     }
   }
 
@@ -71,16 +76,19 @@ class PlaybackSettingsPage extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 '默认播放倍速',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
             for (final s in speeds)
               ListTile(
                 title: Text('${s}x${s == 1.0 ? ' (正常速度)' : ''}'),
                 trailing: store.playbackPreferences.speed == s
-                    ? const Icon(Icons.check_rounded, color: AppColors.hongguoRed)
+                    ? const Icon(
+                        Icons.check_rounded,
+                        color: AppColors.hongguoRed,
+                      )
                     : null,
                 onTap: () => Navigator.pop(context, s),
               ),
@@ -90,7 +98,10 @@ class PlaybackSettingsPage extends StatelessWidget {
     );
     if (selected != null && context.mounted) {
       final updated = store.playbackPreferences.copyWith(speed: selected);
-      await saveUserChange(context, () => store.setPlaybackPreferences(updated));
+      await saveUserChange(
+        context,
+        () => store.setPlaybackPreferences(updated),
+      );
     }
   }
 
@@ -111,10 +122,7 @@ class PlaybackSettingsPage extends StatelessWidget {
         };
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('播放设置'),
-            centerTitle: true,
-          ),
+          appBar: AppBar(title: const Text('播放设置'), centerTitle: true),
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             children: [
@@ -155,7 +163,9 @@ class PlaybackSettingsPage extends StatelessWidget {
                       const Divider(height: 1, indent: 56),
                       SwitchListTile.adaptive(
                         key: const ValueKey('settings-pip-switch'),
-                        secondary: const Icon(Icons.picture_in_picture_alt_rounded),
+                        secondary: const Icon(
+                          Icons.picture_in_picture_alt_rounded,
+                        ),
                         title: const Text('画中画模式'),
                         subtitle: Text(
                           prefs.pictureInPicture
@@ -205,138 +215,36 @@ class PlaybackSettingsPage extends StatelessWidget {
                       activeTrackColor: AppColors.hongguoRed,
                       onChanged: (val) async {
                         final updated = prefs.copyWith(danmaku: val);
-                        await saveUserChange(context, () => store.setPlaybackPreferences(updated));
+                        await saveUserChange(
+                          context,
+                          () => store.setPlaybackPreferences(updated),
+                        );
                       },
                     ),
                     const Divider(height: 1, indent: 56),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.format_size_rounded,
-                                size: 22,
-                                color: isDark ? AppColors.whiteWithAlpha(0.7) : AppColors.greyDark,
-                              ),
-                              const SizedBox(width: 14),
-                              Text(
-                                '弹幕字号',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                switch (prefs.danmakuStyle.fontSizeScale) {
-                                  < 0.9 => '小号 (0.8x)',
-                                  > 1.3 => '特大 (1.5x)',
-                                  > 1.1 => '大号 (1.25x)',
-                                  _ => '标准 (1.0x)',
-                                },
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.hongguoRed,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              for (final (scale, label) in [
-                                (0.8, '小'),
-                                (1.0, '标准'),
-                                (1.25, '大'),
-                                (1.5, '特大'),
-                              ])
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                                    child: _horizontalOptionPill(
-                                      key: ValueKey('settings-danmaku-size-$scale'),
-                                      label: label,
-                                      selected: (prefs.danmakuStyle.fontSizeScale - scale).abs() < 0.05,
-                                      isDark: isDark,
-                                      onTap: () async {
-                                        final updated = prefs.copyWith(
-                                          danmakuStyle: prefs.danmakuStyle.copyWith(fontSizeScale: scale),
-                                        );
-                                        await saveUserChange(context, () => store.setPlaybackPreferences(updated));
-                                      },
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
+                    ListTile(
+                      key: const ValueKey('settings-danmaku-settings'),
+                      leading: const Icon(Icons.tune_rounded),
+                      title: const Text('弹幕设置'),
+                      subtitle: Text(
+                        '${prefs.danmakuStyle.fontSizeLabel} · ${prefs.danmakuStyle.speedLabel} · ${prefs.danmakuStyle.rows}行 · 屏蔽词',
                       ),
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.opacity_rounded,
-                                size: 22,
-                                color: isDark ? AppColors.whiteWithAlpha(0.7) : AppColors.greyDark,
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => PlayerDanmakuSheetView.show(
+                        context: context,
+                        enabled: store.playbackPreferences.danmaku,
+                        style: store.playbackPreferences.danmakuStyle,
+                        onEnabledChanged: (value) =>
+                            store.setPlaybackPreferences(
+                              store.playbackPreferences.copyWith(
+                                danmaku: value,
                               ),
-                              const SizedBox(width: 14),
-                              Text(
-                                '弹幕不透明度',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${(prefs.danmakuStyle.opacity * 100).toInt()}%',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.hongguoRed,
-                                ),
-                              ),
-                            ],
+                            ),
+                        onStyleChanged: (value) => store.setPlaybackPreferences(
+                          store.playbackPreferences.copyWith(
+                            danmakuStyle: value,
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              for (final (op, label) in [
-                                (0.4, '40%'),
-                                (0.6, '60%'),
-                                (0.8, '80%'),
-                                (1.0, '100%'),
-                              ])
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                                    child: _horizontalOptionPill(
-                                      key: ValueKey('settings-danmaku-opacity-$op'),
-                                      label: label,
-                                      selected: (prefs.danmakuStyle.opacity - op).abs() < 0.05,
-                                      isDark: isDark,
-                                      onTap: () async {
-                                        final updated = prefs.copyWith(
-                                          danmakuStyle: prefs.danmakuStyle.copyWith(opacity: op),
-                                        );
-                                        await saveUserChange(context, () => store.setPlaybackPreferences(updated));
-                                      },
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
@@ -346,57 +254,6 @@ class PlaybackSettingsPage extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-
-  Widget _horizontalOptionPill({
-    required Key key,
-    required String label,
-    required bool selected,
-    required bool isDark,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      key: key,
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.hongguoRed
-              : (isDark ? AppColors.darkSurface : AppColors.white),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected
-                ? AppColors.hongguoRed
-                : (isDark ? const Color(0x26FFFFFF) : const Color(0x1F000000)),
-            width: 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: AppColors.hongguoRed.withValues(alpha: 0.35),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-            color: selected
-                ? AppColors.white
-                : (isDark ? AppColors.whiteWithAlpha(0.85) : AppColors.blackWithAlpha(0.85)),
-          ),
-        ),
-      ),
     );
   }
 }

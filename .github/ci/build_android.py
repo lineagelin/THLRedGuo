@@ -21,6 +21,9 @@ options = parser.parse_args()
 variant = BuildVariant(options.all_sources)
 environment = os.environ.copy()
 environment['TZ'] = 'Asia/Shanghai'
+if platform.system() == 'Windows':
+    # Android builds do not need Windows desktop plugin symlinks.
+    environment['FLUTTER_WINDOWS'] = 'false'
 if platform.system() == 'Darwin':
     environment['LANG'] = 'en_US.UTF-8'
     environment['LC_ALL'] = 'en_US.UTF-8'

@@ -188,7 +188,7 @@ class CatPawJsRuntime {
     _injectGlobals();
     final result = _rt.evaluate(script);
     if (result.isError) {
-      throw Exception('JS 脚本加载失败: ${result.rawResult}');
+      throw Exception('JS 脚本加载失败: ${result.stringResult}');
     }
     if (HongguoPlaybackProfile.supported) {
       final bundled = await rootBundle.loadString('assets/sources/hongguo.js');
@@ -664,6 +664,9 @@ globalThis.__native_save_device = function(json) {
     if (url.isNotEmpty) {
       _successfulPlaybackResolves++;
       _lastSuccessfulPlayback = guestSessions.now();
+      if (_officialSource && persistentDeviceSession) {
+        await guestSessions.playbackSucceeded(_injectedDeviceSession);
+      }
     }
     final header = <String, String>{};
     final rawHeader = map['header'] ?? map['headers'];
@@ -794,6 +797,15 @@ globalThis.__native_save_device = function(json) {
       if (cancellation != _cancellation || _isDisposed) {
         throw CatPawSourceFailure.playback('cancelled');
       }
+      final pendingRecovery = guestSessions.playbackRecovery;
+      if (_officialSource &&
+          persistentDeviceSession &&
+          pendingRecovery != null) {
+        await Future.any([pendingRecovery, cancelled]);
+        if (cancellation != _cancellation || _isDisposed) {
+          throw CatPawSourceFailure.playback('cancelled');
+        }
+      }
       while (_officialSource &&
           persistentDeviceSession &&
           guestSessions.initialization != null) {
@@ -844,18 +856,66 @@ globalThis.__native_save_device = function(json) {
       if (cancellation != _cancellation || _isDisposed) {
         throw CatPawSourceFailure.playback('cancelled');
       }
-      if (guestSessions.value == null || guestSessions.value == session) {
+      if (guestSessions.value != null && guestSessions.value != session) {
+        diagnostics.add(
+          SourceDiagnosticEntry(
+            at: DateTime.now().toUtc(),
+            context: diagnosticContext,
+            stage: '游客会话同步',
+            sessionStatus: '载入其他请求已更新的游客会话，保留本地资料和搜索游标',
+          ),
+        );
+        return await _runEval(jsCode, timeout, stopwatch, cancellation);
+      }
+      final recovering = guestSessions.playbackRecovery;
+      if (recovering != null) {
+        await Future.any([recovering, cancelled]);
+        if (cancellation != _cancellation || _isDisposed) {
+          throw CatPawSourceFailure.playback('cancelled');
+        }
+        return guestSessions.value != null && guestSessions.value != session
+            ? await _runEval(jsCode, timeout, stopwatch, cancellation)
+            : data;
+      }
+      if (!HongguoGuestSession.valid(session) ||
+          session != guestSessions.value) {
         return data;
       }
-      diagnostics.add(
-        SourceDiagnosticEntry(
-          at: DateTime.now().toUtc(),
-          context: diagnosticContext,
-          stage: '游客会话同步',
-          sessionStatus: '载入其他请求已更新的游客会话，保留本地资料和搜索游标',
-        ),
-      );
-      return await _runEval(jsCode, timeout, stopwatch, cancellation);
+      final complete = Completer<void>();
+      guestSessions.playbackRecovery = complete.future;
+      try {
+        final decision = await guestSessions.invalidateForPlayback(session!);
+        if (decision == GuestRecoveryDecision.none) return data;
+        if (cancellation != _cancellation || _isDisposed) {
+          throw CatPawSourceFailure.playback('cancelled');
+        }
+        diagnostics.add(
+          SourceDiagnosticEntry(
+            at: DateTime.now().toUtc(),
+            context: diagnosticContext,
+            stage: '播放会话恢复',
+            sessionStatus: decision == GuestRecoveryDecision.reload
+                ? '使用已更新的匿名会话，保留收藏和播放进度'
+                : '四个取流接口均返回空正文，重新初始化匿名会话并仅重试一次；恢复失败后暂停30秒，保留收藏和播放进度',
+          ),
+        );
+        final recovered = await _runEval(
+          jsCode,
+          timeout,
+          stopwatch,
+          cancellation,
+        );
+        if (recovered is Map &&
+            (recovered['url']?.toString() ?? '').isNotEmpty) {
+          await guestSessions.playbackSucceeded(_injectedDeviceSession);
+        }
+        return recovered;
+      } finally {
+        complete.complete();
+        if (identical(guestSessions.playbackRecovery, complete.future)) {
+          guestSessions.playbackRecovery = null;
+        }
+      }
     } catch (error) {
       failure = error;
       rethrow;

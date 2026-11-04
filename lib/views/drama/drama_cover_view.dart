@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/utils/media/cover_decoder.dart';
+import 'package:THLRedLook/utils/screen/app_layout.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 
 /// 短剧海报毛玻璃托底背景组件，突出剧目图片质感并提供沉浸式环境光晕
@@ -111,12 +112,14 @@ class DramaCover extends StatelessWidget {
     required this.repository,
     this.radius = 14,
     this.showEpisodeCount = true,
+    this.showOverlay = true,
   });
 
   final Drama drama;
   final AppRepository repository;
   final double radius;
   final bool showEpisodeCount;
+  final bool showOverlay;
 
   static const imagesDisabled = bool.fromEnvironment('DISABLE_REMOTE_IMAGES');
 
@@ -172,15 +175,16 @@ class DramaCover extends StatelessWidget {
                   repository: repository,
                   placeholder: placeholder,
                 ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: AppGradients.posterOverlay,
+              if (showOverlay)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.posterOverlay,
+                      ),
                     ),
                   ),
                 ),
-              ),
               if (showEpisodeCount && drama.episodes > 0)
                 Positioned(
                   left: 8,
@@ -209,7 +213,7 @@ class DramaCover extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (drama.vip)
+              if (drama.vip && !AppLayout.isMobile(context))
                 Positioned(
                   left: 8,
                   top: 8,

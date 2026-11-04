@@ -16,7 +16,7 @@ class BuildVariant:
 
     @property
     def name(self):
-        return '糖葫芦Haw'
+        return '糖葫芦'
 
     @property
     def slug(self):

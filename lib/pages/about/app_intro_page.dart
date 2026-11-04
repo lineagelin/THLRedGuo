@@ -144,8 +144,8 @@ class AppIntroPage extends StatelessWidget {
                       _buildFeatureTile(
                         context,
                         icon: Icons.security_rounded,
-                        title: '本地隐私与保险箱',
-                        description: '观看进度与追剧收藏全部保存在本地，支持配置独立手势密码与私密安全锁。',
+                        title: '本地记录与手势保护',
+                        description: '观看进度与追剧收藏保存在本地，可配置应用手势密码。',
                       ),
                     ],
                   ),

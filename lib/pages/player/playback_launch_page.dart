@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:THLRedLook/core/series/hongguo_series.dart';
 
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
 import 'package:THLRedLook/core/store/follow_state.dart';
@@ -71,11 +73,17 @@ class PlaybackLaunchScreen extends StatefulWidget {
     required this.drama,
     required this.repository,
     required this.store,
+    this.playerFactory,
+    this.videoBuilder,
   });
 
   final Drama drama;
   final AppRepository repository;
   final LocalStore store;
+  @visibleForTesting
+  final Player Function()? playerFactory;
+  @visibleForTesting
+  final Widget Function(Widget)? videoBuilder;
 
   @override
   State<PlaybackLaunchScreen> createState() => _PlaybackLaunchScreenState();
@@ -85,6 +93,7 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
   late final int _profileEpoch;
   int _generation = 0;
   String? _error;
+  Widget? _playerScreen;
 
   @override
   void initState() {
@@ -103,7 +112,12 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
     final generation = ++_generation;
     setState(() => _error = null);
     try {
-      final detail = await widget.repository.detail(widget.drama);
+      final identity = await resolveHongguoSeriesIdentity(
+        drama: widget.drama,
+        repository: widget.repository,
+        store: widget.store,
+      );
+      final detail = await widget.repository.detail(identity);
       if (!mounted ||
           generation != _generation ||
           _profileEpoch != widget.store.profileEpoch) {
@@ -140,15 +154,15 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
           _profileEpoch != widget.store.profileEpoch) {
         return;
       }
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => PlayerScreen(
-            detail: merged,
-            initialIndex: index,
-            initialPosition: position,
-            repository: widget.repository,
-            store: widget.store,
-          ),
+      setState(
+        () => _playerScreen = PlayerScreen(
+          detail: merged,
+          initialIndex: index,
+          initialPosition: position,
+          repository: widget.repository,
+          store: widget.store,
+          playerFactory: widget.playerFactory,
+          videoBuilder: widget.videoBuilder,
         ),
       );
     } catch (error) {
@@ -162,28 +176,27 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.drama.title)),
-    body: SafeArea(
-      top: false,
-      child: _error == null
-          ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('正在进入播放'),
-                ],
-              ),
-            )
-          : StatusPanel(
-              title: '暂时无法播放',
-              message: _error!,
-              onRetry: _load,
-              action: '重试',
-              icon: Icons.play_disabled_rounded,
-            ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      _playerScreen ??
+      Scaffold(
+        backgroundColor: Colors.black,
+        appBar: _error == null ? null : AppBar(title: Text(widget.drama.title)),
+        body: SafeArea(
+          top: false,
+          child: _error == null
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [CircularProgressIndicator()],
+                  ),
+                )
+              : StatusPanel(
+                  title: '暂时无法播放',
+                  message: _error!,
+                  onRetry: _load,
+                  action: '重试',
+                  icon: Icons.play_disabled_rounded,
+                ),
+        ),
+      );
 }

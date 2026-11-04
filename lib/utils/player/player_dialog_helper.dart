@@ -1,3 +1,4 @@
+import 'package:THLRedLook/core/bridge/core_bridge.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -51,6 +52,9 @@ class PlayerDialogHelper {
     required List<Episode> episodes,
     required int currentIndex,
     String? dramaTitle,
+    Drama? drama,
+    AppRepository? repository,
+    LocalStore? store,
     List<HongguoSeriesEntry> seriesEntries = const [],
     String? currentDramaId,
     ValueChanged<Drama>? onSeasonSelected,
@@ -66,6 +70,9 @@ class PlayerDialogHelper {
         episodes: episodes,
         currentIndex: currentIndex,
         dramaTitle: dramaTitle,
+        drama: drama,
+        repository: repository,
+        store: store,
         seriesEntries: seriesEntries,
         currentDramaId: currentDramaId,
         onEpisodeSelected: (index) => Navigator.pop(sheetContext, index),

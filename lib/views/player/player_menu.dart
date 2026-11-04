@@ -173,7 +173,9 @@ class _PlayerMenuState extends State<PlayerMenu> {
       color: colors.onSurfaceVariant,
       height: 1.5,
     );
-    final available = widget.qualities.isNotEmpty ? widget.qualities : const [1080, 720, 360];
+    final available = widget.qualities.isNotEmpty
+        ? widget.qualities
+        : const [1080, 720, 360];
     final qualities = {
       0,
       1080,
@@ -207,9 +209,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                           setState(() {
                             _preferences = _preferences.copyWith(speed: speed);
                           });
-                          _run(
-                            () => widget.onPreferences(_preferences),
-                          );
+                          _run(() => widget.onPreferences(_preferences));
                         },
                 ),
             ],
@@ -241,11 +241,11 @@ class _PlayerMenuState extends State<PlayerMenu> {
                       ? null
                       : (_) {
                           setState(() {
-                            _preferences = _preferences.copyWith(quality: quality);
+                            _preferences = _preferences.copyWith(
+                              quality: quality,
+                            );
                           });
-                          _run(
-                            () => widget.onPreferences(_preferences),
-                          );
+                          _run(() => widget.onPreferences(_preferences));
                         },
                 ),
             ],
@@ -269,9 +269,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
               setState(() {
                 _preferences = _preferences.copyWith(enhancement: enhancement);
               });
-              _run(
-                () => widget.onPreferences(_preferences),
-              );
+              _run(() => widget.onPreferences(_preferences));
             },
             onCompare: widget.onCompareEnhancement ?? () {},
           ),
@@ -288,9 +286,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                     setState(() {
                       _preferences = _preferences.copyWith(danmaku: value);
                     });
-                    _run(
-                      () => widget.onPreferences(_preferences),
-                    );
+                    _run(() => widget.onPreferences(_preferences));
                   },
           ),
           if (preferences.danmaku) ...[
@@ -316,40 +312,26 @@ class _PlayerMenuState extends State<PlayerMenu> {
               ],
             ),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                for (final (op, label) in [
-                  (0.4, '40%'),
-                  (0.6, '60%'),
-                  (0.8, '80%'),
-                  (1.0, '100%'),
-                ])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: ChoiceChip(
-                        key: ValueKey('menu-danmaku-opacity-$op'),
-                        label: Center(
-                          child: Text(
-                            label,
-                            style: const TextStyle(fontSize: 12),
-                          ),
+            Slider(
+              key: const ValueKey('menu-danmaku-opacity-slider'),
+              value: preferences.danmakuStyle.opacity.clamp(.1, 1),
+              min: .1,
+              max: 1,
+              divisions: 90,
+              label:
+                  '${(preferences.danmakuStyle.opacity.clamp(.1, 1) * 100).round()}%',
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() {
+                      _preferences = _preferences.copyWith(
+                        danmakuStyle: _preferences.danmakuStyle.copyWith(
+                          opacity: value,
                         ),
-                        selected: (preferences.danmakuStyle.opacity - op).abs() < 0.05,
-                        onSelected: _busy
-                            ? null
-                            : (_) {
-                                setState(() {
-                                  _preferences = _preferences.copyWith(
-                                    danmakuStyle: preferences.danmakuStyle.copyWith(opacity: op),
-                                  );
-                                });
-                                _run(() => widget.onPreferences(_preferences));
-                              },
-                      ),
-                    ),
-                  ),
-              ],
+                      );
+                    }),
+              onChangeEnd: _busy
+                  ? null
+                  : (_) => _run(() => widget.onPreferences(_preferences)),
             ),
             const SizedBox(height: 10),
           ],
@@ -362,7 +344,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                   key: const ValueKey('player-danmaku-settings'),
                   onPressed: _busy ? null : widget.onDanmakuSettings,
                   icon: const Icon(Icons.tune_rounded, size: 18),
-                  label: const Text('弹幕样式设置'),
+                  label: const Text('弹幕设置'),
                 ),
               if (widget.onRetryDanmaku != null)
                 TextButton.icon(
@@ -390,10 +372,8 @@ class _PlayerMenuState extends State<PlayerMenu> {
               underline: const SizedBox.shrink(),
               items: PlaybackDecoderMode.values
                   .map(
-                    (mode) => DropdownMenuItem(
-                      value: mode,
-                      child: Text(mode.label),
-                    ),
+                    (mode) =>
+                        DropdownMenuItem(value: mode, child: Text(mode.label)),
                   )
                   .toList(),
               onChanged: _busy
@@ -420,9 +400,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                     setState(() {
                       _preferences = _preferences.copyWith(preload: value);
                     });
-                    _run(
-                      () => widget.onPreferences(_preferences),
-                    );
+                    _run(() => widget.onPreferences(_preferences));
                   },
           ),
           const SizedBox(height: 8),
@@ -438,9 +416,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                     setState(() {
                       _preferences = _preferences.copyWith(autoAdvance: value);
                     });
-                    _run(
-                      () => widget.onPreferences(_preferences),
-                    );
+                    _run(() => widget.onPreferences(_preferences));
                   },
           ),
           const SizedBox(height: 8),
@@ -464,7 +440,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           const SizedBox(height: 20),
           Text(
             widget.mobile
-                ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'
+                ? '左侧上下滑调亮度，右侧上下滑调音量，中间上下滑切集；横向滑动调整进度。长按画面临时 3 倍速，松开恢复；双击播放或暂停。'
                 : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 3 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
             style: helperStyle.copyWith(height: 1.6),
           ),

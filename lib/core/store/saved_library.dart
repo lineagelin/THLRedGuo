@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/utils/screen/app_layout.dart';
 import 'package:THLRedLook/core/catalog/catalog_sort.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
@@ -8,11 +7,7 @@ import 'package:THLRedLook/views/drama/drama_actions.dart';
 import 'package:THLRedLook/core/store/follow_state.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
-import 'package:THLRedLook/pages/privacy/privacy_vault_page.dart';
 import 'package:THLRedLook/views/remote/remote_widgets.dart';
-import 'package:THLRedLook/utils/privacy/privacy_vault_controller.dart';
-import 'package:THLRedLook/views/privacy/vault_password_dialog.dart';
-import 'package:THLRedLook/views/privacy/vault_password_setup_dialog.dart';
 import 'package:THLRedLook/views/common/widgets.dart';
 
 class SavedLibrary extends StatefulWidget {
@@ -24,11 +19,15 @@ class SavedLibrary extends StatefulWidget {
     required this.onOpen,
     required this.onContinue,
     this.onDownload,
+    this.allSources = false,
+    this.showBackButton = false,
   });
 
   final AppRepository repository;
   final LocalStore store;
   final bool history;
+  final bool allSources;
+  final bool showBackButton;
   final ValueChanged<Drama> onOpen;
   final ValueChanged<Drama> onContinue;
   final ValueChanged<Drama>? onDownload;
@@ -49,12 +48,16 @@ class _SavedLibraryState extends State<SavedLibrary> {
 
   Future<void> _clearHistory() async {
     final epoch = widget.store.profileEpoch;
-    final source = widget.store.source;
+    final source = widget.allSources ? '' : widget.store.source;
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('清空观看记录？'),
-        content: const Text('这会删除当前站源的观看进度，其他站源与追剧状态会保留。'),
+        content: Text(
+          widget.allSources
+              ? '这会删除全部观看进度，追剧状态会保留。'
+              : '这会删除当前站源的观看进度，其他站源与追剧状态会保留。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -73,60 +76,6 @@ class _SavedLibraryState extends State<SavedLibrary> {
         () => widget.store.clearHistory(targetSource: source),
       );
     }
-  }
-
-  Future<void> _openPrivacyVault() async {
-    final vaultController = PrivacyVaultController(widget.store.preferences);
-    if (!vaultController.hasPassword) {
-      final setup = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('尚未设置隐私库密码'),
-          content: const Text('隐私短剧库受安全加密保护，首次进入请先设置访问密码。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('暂不设置'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.hongguoRed,
-              ),
-              child: const Text('立即设置'),
-            ),
-          ],
-        ),
-      );
-      if (setup == true && mounted) {
-        final ok = await VaultPasswordSetupDialog.show(
-          context,
-          controller: vaultController,
-        );
-        if (!ok || !mounted) return;
-      } else {
-        return;
-      }
-    } else if (!vaultController.isUnlocked) {
-      final verified = await VaultPasswordDialog.show(
-        context,
-        controller: vaultController,
-      );
-      if (!verified || !mounted) return;
-    }
-
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => PrivacyVaultPage(
-          controller: vaultController,
-          repository: widget.repository,
-          store: widget.store,
-        ),
-      ),
-    );
-    if (mounted) setState(() {});
   }
 
   void _actions(Drama drama) => showDramaActions(
@@ -170,15 +119,15 @@ class _SavedLibraryState extends State<SavedLibrary> {
     animation: widget.store,
     builder: (context, _) {
       final currentSource = widget.store.source;
-      final history = widget.store.historyForSource(currentSource);
+      final history = widget.allSources
+          ? widget.store.history
+          : widget.store.historyForSource(currentSource);
       final all = widget.history
           ? history.map((entry) => entry.drama).toList()
+          : widget.allSources
+          ? widget.store.favorites
           : widget.store.favoritesForSource(currentSource);
-      final vaultController = PrivacyVaultController(widget.store.preferences);
       final items = all.where((drama) {
-        if (!widget.history && vaultController.isInVault(drama.id)) {
-          return false;
-        }
         if (!matchesDramaQuery(drama, _search.text)) return false;
         final state = widget.store.following(drama.id);
         return widget.history ||
@@ -202,21 +151,13 @@ class _SavedLibraryState extends State<SavedLibrary> {
           padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
           child: Row(
             children: [
+              if (widget.showBackButton) const BackButton(),
               Expanded(
                 child: Text(
                   '${widget.history ? '最近观看' : '我的追剧'} · ${items.length}',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-              if (!widget.history)
-                IconButton(
-                  tooltip: '隐私短剧库',
-                  icon: const Icon(
-                    Icons.shield_outlined,
-                    color: AppColors.hongguoRed,
-                  ),
-                  onPressed: _openPrivacyVault,
-                ),
               if (widget.history && all.isNotEmpty)
                 IconButton(
                   tooltip: '清空观看记录',

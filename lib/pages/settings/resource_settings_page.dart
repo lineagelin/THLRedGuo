@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:THLRedLook/utils/screen/app_layout.dart';
 
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
@@ -57,7 +58,9 @@ class DownloadPreferencesScreen extends StatelessWidget {
                 SwitchListTile(
                   value: preferences.includeVip,
                   title: const Text('默认包含 VIP 集'),
-                  subtitle: const Text('VIP 集可能仅提供试看内容；下载前仍可调整选择。'),
+                  subtitle: AppLayout.isMobile(context)
+                      ? const Text('下载前仍可调整选择。')
+                      : const Text('VIP 集可能仅提供试看内容；下载前仍可调整选择。'),
                   onChanged: !store.canDownload
                       ? null
                       : (value) => saveUserChange(

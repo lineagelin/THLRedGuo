@@ -2,12 +2,66 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
 import 'package:THLRedLook/core/player/playback_lease.dart';
+import 'package:THLRedLook/core/player/playback_preloader.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/models/feed/feed_models.dart';
 
 class VideoFeedController extends ChangeNotifier {
-  VideoFeedController(this.repository, this.store);
+  VideoFeedController(this.repository, this.store)
+    : nearby = PlaybackPreloader(repository);
+  final PlaybackPreloader nearby;
+  bool cleanScreen = false;
+  void setCleanScreen(bool value) {
+    if (cleanScreen == value || _disposed) return;
+    cleanScreen = value;
+    notifyListeners();
+  }
+
+  Object? _menuOwner;
+  Future<void> Function()? openPlayerMenu;
+  void registerMenu(Object owner, Future<void> Function()? menu) {
+    if (menu == null && _menuOwner != owner) return;
+    _menuOwner = owner;
+    openPlayerMenu = menu;
+  }
+
+  void _cacheNeighbors() {
+    if (!active || !allowed) {
+      nearby.pause();
+      return;
+    }
+    nearby.prepareTargets(
+      [
+        for (final delta in [1, -1, 2, -2])
+          if (index + delta >= 0 && index + delta < items.length)
+            (
+              items[index + delta].drama,
+              Episode(
+                {
+                  'id':
+                      (store.watched(items[index + delta].drama.id)?.episode ??
+                              items[index + delta].episode)
+                          .toString(),
+                },
+                store.watched(items[index + delta].drama.id)?.episode ??
+                    items[index + delta].episode,
+              ),
+            ),
+      ],
+      quality: store.playbackPreferences.quality,
+      current: current == null
+          ? null
+          : (
+              current!.drama,
+              Episode({
+                'id':
+                    '${store.watched(current!.drama.id)?.episode ?? current!.episode}',
+              }, store.watched(current!.drama.id)?.episode ?? current!.episode),
+            ),
+    );
+  }
+
   final AppRepository repository;
   final LocalStore store;
   final playback = PlaybackLeaseQueue();
@@ -38,17 +92,12 @@ class VideoFeedController extends ChangeNotifier {
   void setActive(bool value) {
     if (_disposed || active == value) return;
     active = value;
-    if (!active) {
-      detail = null;
-      loadingDetail = false;
-    }
-    _selection++;
-    _selectionTimer?.cancel();
+    _cacheNeighbors();
     notifyListeners();
     if (active && allowed) {
       if (items.isEmpty && !loading) {
         unawaited(refresh());
-      } else {
+      } else if (detail == null) {
         unawaited(prepare());
       }
     }
@@ -68,6 +117,7 @@ class VideoFeedController extends ChangeNotifier {
     detail = null;
     index = _page = 0;
     _details.clear();
+    nearby.clear();
     loading = true;
     loadingMore = false;
     hasMore = true;
@@ -156,6 +206,7 @@ class VideoFeedController extends ChangeNotifier {
     } finally {
       if (!_disposed && generation == _generation) {
         loadingMore = false;
+        _cacheNeighbors();
         notifyListeners();
         if (active &&
             hasMore &&
@@ -178,6 +229,7 @@ class VideoFeedController extends ChangeNotifier {
 
   void select(int value) {
     if (_disposed || value < 0 || value >= items.length) return;
+    if (value == index) return;
     index = value;
     _selection++;
     detail = null;
@@ -239,13 +291,19 @@ class VideoFeedController extends ChangeNotifier {
     } finally {
       if (!_disposed && generation == _generation) {
         loadingMore = false;
+        _cacheNeighbors();
         notifyListeners();
       }
     }
   }
 
   Future<void> prepare() async {
-    if (_preparing || _disposed || !active || !allowed || current == null) {
+    if (_preparing ||
+        _disposed ||
+        !active ||
+        !allowed ||
+        current == null ||
+        detail != null) {
       return;
     }
     _preparing = true;
@@ -265,7 +323,6 @@ class VideoFeedController extends ChangeNotifier {
               _details[target.drama.id] ??
               await repository.detail(target.drama);
           if (_disposed ||
-              !active ||
               ticket != _selection ||
               store.profileEpoch != epoch) {
             continue;
@@ -278,6 +335,7 @@ class VideoFeedController extends ChangeNotifier {
             _details.remove(_details.keys.first);
           }
           detail = loaded;
+          _cacheNeighbors();
           loadingDetail = false;
           notifyListeners();
           unawaited(store.markFeedSeen(target.drama.id));
@@ -310,6 +368,7 @@ class VideoFeedController extends ChangeNotifier {
     _generation++;
     _selection++;
     _selectionTimer?.cancel();
+    nearby.dispose();
     super.dispose();
   }
 }

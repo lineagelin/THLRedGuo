@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 全局统一色彩中心（糖葫芦Haw 品牌视觉设计规范）
+/// 全局统一色彩中心（糖葫芦 品牌视觉设计规范）
 /// 规则：除本文件外，整个工程禁止出现任何硬编码 Color 构造或 Colors 静态引用。
 abstract final class AppColors {
   // ==========================================

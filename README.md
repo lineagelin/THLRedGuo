@@ -1,4 +1,4 @@
-# 糖葫芦Haw (THLRedLook)
+# 糖葫芦 (THLRedLook)
 
 <p align="left">
   <a href="https://github.com/never88gone/THLRedGuo/stargazers"><img src="https://img.shields.io/github/stars/never88gone/THLRedGuo?style=flat-square&logo=github&color=e02424" alt="GitHub Stars" /></a>
@@ -15,7 +15,7 @@
 > 3. **网络数据版权归属**：应用中所有可访问的数据源均来源于第三方网络公开平台，其版权与知识产权均归原版权方所有，请自觉支持正版内容；
 > 4. **责任限制**：用户使用本软件及自配数据源产生的一切法律责任及版权纠纷均由使用者自行承担，与本项目及其代码贡献者无关。
 
-**糖葫芦Haw**（工程标识：`THLRedLook`，包名 / Application ID：`com.never88gone.redlook`）是一款基于 **Flutter + Apple tvOS 原生** 打造的全平台独立流媒体与短剧聚合应用。
+**糖葫芦**（工程标识：`THLRedLook`，Android 包名 / Application ID：`com.line.redlook`）是一款基于 **Flutter + Apple tvOS 原生** 打造的全平台独立流媒体与短剧聚合应用。
 
 应用内无需注册账号或登录。数据请求、签名和解析由设备端 JS 数据源完成，媒体解码、流式解密等底层能力由客户端提供，无需搭建远程中转或中心化代理服务。
 

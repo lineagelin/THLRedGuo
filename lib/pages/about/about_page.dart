@@ -77,7 +77,7 @@ class _AboutPageState extends State<AboutPage> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🎉 糖葫芦Haw已解锁全部数据源！'),
+          content: Text('🎉 糖葫芦已解锁全部数据源！'),
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 2),
         ),

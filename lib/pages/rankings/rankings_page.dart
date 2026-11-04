@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/views/catalog/catalog_filters.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
-import 'package:THLRedLook/pages/detail/detail_page.dart';
+import 'package:THLRedLook/pages/player/playback_launch_page.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/models/ranking/ranking_models.dart';
@@ -104,7 +104,11 @@ class _RankingsScreenState extends State<RankingsScreen> {
         _boards = boards;
         _board =
             boards
-                .where((board) => board.source == targetSource || board.groupId == targetSource)
+                .where(
+                  (board) =>
+                      board.source == targetSource ||
+                      board.groupId == targetSource,
+                )
                 .firstOrNull ??
             boards.firstOrNull;
         _loading = false;
@@ -169,7 +173,8 @@ class _RankingsScreenState extends State<RankingsScreen> {
     } catch (error) {
       if (mounted && generation == _generation) {
         final errorStr = error.toString();
-        final isCursorExpired = errorStr.contains('CURSOR_EXPIRED') ||
+        final isCursorExpired =
+            errorStr.contains('CURSOR_EXPIRED') ||
             errorStr.contains('MISSING_CURSOR') ||
             errorStr.contains('游标');
         if (isCursorExpired && more) {
@@ -207,6 +212,11 @@ class _RankingsScreenState extends State<RankingsScreen> {
     final boards = _boards
         .where((board) => board.groupId == _board?.groupId)
         .toList();
+    final caption = [_board?.description ?? '', _updated]
+        .map((text) => text.trim().replaceAll(RegExp(r'\s+'), ' '))
+        .where((text) => text.isNotEmpty)
+        .toSet()
+        .join(' ');
     final items = _items
         .map(
           (item) => RankingItem(
@@ -247,7 +257,8 @@ class _RankingsScreenState extends State<RankingsScreen> {
         actions: [
           IconButton(
             key: const ValueKey('toggle-ranking-view-mode'),
-            tooltip: (_waterfallMode ?? (MediaQuery.sizeOf(context).width >= 600))
+            tooltip:
+                (_waterfallMode ?? (MediaQuery.sizeOf(context).width >= 600))
                 ? '切换为列表视图'
                 : '切换为瀑布流视图',
             icon: Icon(
@@ -284,16 +295,13 @@ class _RankingsScreenState extends State<RankingsScreen> {
                     _select(boards.firstWhere((board) => board.id == id)),
                 onRetry: () => _load(force: true),
               ),
-            if (_board != null)
+            if (caption.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    [
-                      _board!.description,
-                      if (_updated.isNotEmpty) _updated,
-                    ].join(' '),
+                    caption,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -354,9 +362,9 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                 : '正在同步最新榜单排行，请稍候片刻',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -408,7 +416,8 @@ class _RankingsScreenState extends State<RankingsScreen> {
     final spacing = width < 600 ? 10.0 : 16.0;
     final itemWidth = (contentWidth - (columns - 1) * spacing) / columns;
     final coverHeight = itemWidth * 1.38;
-    final itemHeight = coverHeight + 66.0;
+    final itemHeight =
+        coverHeight + MediaQuery.textScalerOf(context).scale(76) + 18;
 
     return RefreshIndicator(
       onRefresh: () => _load(force: true),
@@ -426,18 +435,15 @@ class _RankingsScreenState extends State<RankingsScreen> {
                 crossAxisSpacing: spacing,
                 mainAxisExtent: itemHeight,
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final item = items[index];
-                  return _buildRankingWaterfallCard(
-                    context,
-                    item,
-                    itemWidth,
-                    coverHeight,
-                  );
-                },
-                childCount: items.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final item = items[index];
+                return _buildRankingWaterfallCard(
+                  context,
+                  item,
+                  itemWidth,
+                  coverHeight,
+                );
+              }, childCount: items.length),
             ),
           ),
           SliverToBoxAdapter(
@@ -473,7 +479,6 @@ class _RankingsScreenState extends State<RankingsScreen> {
     double coverHeight,
   ) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     final (badgeBg, badgeTextColor, badgeLabel) = switch (item.rank) {
       1 => (
@@ -531,7 +536,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
         onTap: () => Navigator.push<void>(
           context,
           MaterialPageRoute(
-            builder: (_) => DetailScreen(
+            builder: (_) => PlaybackLaunchScreen(
               drama: item.drama,
               repository: widget.repository,
               store: widget.store,
@@ -552,6 +557,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
                       drama: item.drama,
                       repository: widget.repository,
                       radius: 8,
+                      showEpisodeCount: false,
                     ),
                   ),
                   Positioned(
@@ -599,6 +605,16 @@ class _RankingsScreenState extends State<RankingsScreen> {
               ),
             ),
             const SizedBox(height: 3),
+            Text(
+              [
+                item.drama.displayCategory,
+                if (item.drama.episodes > 0) '全${item.drama.episodes}集',
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 3),
             Row(
               children: [
                 if (item.metric.isNotEmpty) ...[
@@ -617,20 +633,6 @@ class _RankingsScreenState extends State<RankingsScreen> {
                         fontSize: 11,
                         color: AppColors.hongguoRed,
                         fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ] else if (item.drama.category.isNotEmpty) ...[
-                  Expanded(
-                    child: Text(
-                      item.drama.category,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark
-                            ? AppColors.whiteWithAlpha(0.6)
-                            : AppColors.greyDark,
                       ),
                     ),
                   ),
@@ -693,7 +695,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
                   onTap: () => Navigator.push<void>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => DetailScreen(
+                      builder: (_) => PlaybackLaunchScreen(
                         drama: item.drama,
                         repository: widget.repository,
                         store: widget.store,
@@ -726,6 +728,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
                             drama: item.drama,
                             repository: widget.repository,
                             radius: 8,
+                            showEpisodeCount: false,
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -737,20 +740,20 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                 item.drama.title,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 4),
-                              if (item.drama.category.isNotEmpty)
-                                Text(
-                                  item.drama.category,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
+                              Text(
+                                [
+                                  item.drama.displayCategory,
+                                  if (item.drama.episodes > 0)
+                                    '全${item.drama.episodes}集',
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                               if (item.metric.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),

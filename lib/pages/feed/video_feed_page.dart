@@ -13,9 +13,11 @@ class VideoFeedScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.active,
+    this.onSearch,
   });
   final VideoFeedController controller;
   final bool active;
+  final VoidCallback? onSearch;
 
   @override
   State<VideoFeedScreen> createState() => _VideoFeedScreenState();
@@ -87,7 +89,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen>
     if (_opening || drama == null) return;
     _opening = true;
     _syncActive();
-    await feed.playback.idle;
     if (!mounted) return;
     try {
       await Navigator.of(context).push<void>(
@@ -146,7 +147,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen>
   Widget _page(int index) {
     final current = index == feed.index;
     final detail = current ? feed.detail : null;
-    if (current && feed.active && detail != null && !feed.loadingDetail) {
+    if (current && detail != null && !feed.loadingDetail) {
       final watched = feed.store.watched(detail.drama.id);
       final initial = watched == null
           ? (feed.items[index].episode - 1).clamp(0, detail.episodes.length - 1)
@@ -160,6 +161,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen>
         repository: feed.repository,
         store: feed.store,
         feed: true,
+        feedActive: feed.active,
+        initialCleanScreen: feed.cleanScreen,
+        onCleanScreenChanged: feed.setCleanScreen,
+        preparedCache: feed.nearby,
+        onMenuChanged: (menu) => feed.registerMenu(detail.drama.id, menu),
         playbackQueue: feed.playback,
         onOpenDetail: () => unawaited(_openDetail()),
         onSeasonChanged: feed.switchSeason,
@@ -241,51 +247,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Row(
-                              children: [
-                                const Text(
-                                  '推荐',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Text(
-                                    '上滑换剧',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  key: const ValueKey('feed-refresh'),
-                                  tooltip: '刷新推荐',
-                                  onPressed: feed.loading ? null : _refresh,
-                                  color: Colors.white,
-                                  icon: const Icon(Icons.refresh),
-                                ),
-                                IconButton(
-                                  key: const ValueKey('feed-previous'),
-                                  tooltip: '上一部',
-                                  onPressed: feed.index > 0
-                                      ? () => unawaited(_move(-1))
-                                      : null,
-                                  color: Colors.white,
-                                  icon: const Icon(Icons.keyboard_arrow_up),
-                                ),
-                                IconButton(
-                                  key: const ValueKey('feed-next'),
-                                  tooltip: '下一部',
-                                  onPressed: () => unawaited(_move(1)),
-                                  color: Colors.white,
-                                  icon: const Icon(Icons.keyboard_arrow_down),
-                                ),
-                              ],
-                            ),
                             if (feed.loadingMore)
                               const LinearProgressIndicator(minHeight: 2),
                             if (feed.moreError != null)

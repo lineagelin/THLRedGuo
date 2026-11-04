@@ -376,7 +376,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   ),
                 ),
               ),
-              _GestureHudOverlay(interactions: widget.interactions),
+              PlayerGestureHudOverlay(interactions: widget.interactions),
             ],
           );
         },
@@ -385,8 +385,8 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 }
 
-class _GestureHudOverlay extends StatelessWidget {
-  const _GestureHudOverlay({required this.interactions});
+class PlayerGestureHudOverlay extends StatelessWidget {
+  const PlayerGestureHudOverlay({super.key, required this.interactions});
 
   final PlayerInteractions interactions;
 
@@ -406,8 +406,6 @@ class _GestureHudOverlay extends StatelessWidget {
               duration: const Duration(milliseconds: 150),
               child: hud.type == SwipeAction.seek
                   ? _buildSeekCard(hud)
-                  : hud.type == SwipeAction.brightness
-                  ? _buildBrightnessCard(hud)
                   : const SizedBox.shrink(),
             ),
           ),
@@ -498,62 +496,6 @@ class _GestureHudOverlay extends StatelessWidget {
                 backgroundColor: AppColors.playerGestureHudTrack,
                 valueColor: const AlwaysStoppedAnimation<Color>(
                   AppColors.playerGestureHudHighlight,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBrightnessCard(GestureHudState hud) {
-    final percent = (hud.value * 100).round().clamp(0, 100);
-    return Container(
-      key: const ValueKey('brightness-hud-card'),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.playerGestureHudBackground,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.playerGestureHudBorder, width: 0.5),
-        boxShadow: const [
-          BoxShadow(
-            color: AppColors.playerGestureHudShadow,
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            hud.value > 0.5
-                ? Icons.brightness_7_rounded
-                : Icons.brightness_medium_rounded,
-            color: AppColors.white,
-            size: 26,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$percent%',
-            style: const TextStyle(
-              color: AppColors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 90,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: hud.value.clamp(0.0, 1.0),
-                minHeight: 3.5,
-                backgroundColor: AppColors.playerGestureHudTrack,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  AppColors.white,
                 ),
               ),
             ),

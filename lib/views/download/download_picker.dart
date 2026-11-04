@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:THLRedLook/utils/screen/app_layout.dart';
 
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/core/download/download_preferences.dart';
@@ -191,7 +192,7 @@ class _DownloadPickerState extends State<DownloadPicker> {
             ),
           ),
         ),
-        if (hasVip)
+        if (hasVip && !AppLayout.isMobile(context))
           Padding(
             padding: EdgeInsets.fromLTRB(
               widget.embedded ? 10 : 18,

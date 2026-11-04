@@ -191,7 +191,7 @@ jobs:
           else
             echo "创建新 Release: $tag (Target: ${{ github.sha }})"
             gh release create "$tag" release/* \
-              --title "糖葫芦Haw v${base_version}" \
-              --notes "## 糖葫芦Haw (THLRedLook) v${base_version} Apple tvOS 原生大屏版本发布" \
+              --title "糖葫芦 v${base_version}" \
+              --notes "## 糖葫芦 (THLRedLook) v${base_version} Apple tvOS 原生大屏版本发布" \
               --target "${{ github.sha }}"
           fi

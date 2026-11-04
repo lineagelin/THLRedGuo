@@ -9,7 +9,6 @@ import 'package:THLRedLook/pages/about/about_page.dart';
 import 'package:THLRedLook/pages/about/app_intro_page.dart';
 import 'package:THLRedLook/pages/about/contact_page.dart';
 import 'package:THLRedLook/pages/about/third_party_page.dart';
-import 'package:THLRedLook/pages/privacy/privacy_settings_page.dart';
 import 'package:THLRedLook/pages/settings/backup_settings_page.dart';
 import 'package:THLRedLook/pages/settings/icloud_sync_page.dart';
 import 'package:THLRedLook/core/sync/icloud_sync_service.dart';
@@ -23,7 +22,6 @@ import 'package:THLRedLook/pages/settings/theme_settings_page.dart';
 import 'package:THLRedLook/pages/sources/sources_page.dart';
 import 'package:THLRedLook/utils/build/app_build.dart';
 import 'package:THLRedLook/utils/diary/diary_service.dart';
-import 'package:THLRedLook/utils/privacy/privacy_lock_controller.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/utils/theme/app_theme.dart';
 import 'package:THLRedLook/views/common/widgets.dart';
@@ -90,10 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         };
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('设置'),
-            centerTitle: true,
-          ),
+          appBar: AppBar(title: const Text('设置'), centerTitle: true),
           body: ListView(
             padding: const EdgeInsets.symmetric(vertical: 12),
             children: [
@@ -106,7 +101,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: const ValueKey('settings-display-mode-entry'),
                     leading: const Icon(Icons.devices_rounded),
                     title: const Text('页面模式'),
-                    subtitle: Text('当前：${_displayModeLabel(widget.store.displayMode)} · 电视、手机或电脑适配'),
+                    subtitle: Text(
+                      '当前：${_displayModeLabel(widget.store.displayMode)} · 电视、手机或电脑适配',
+                    ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => Navigator.push(
                       context,
@@ -119,7 +116,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: const ValueKey('settings-theme-entry'),
                     leading: const Icon(Icons.palette_outlined),
                     title: const Text('外观与主题'),
-                    subtitle: Text('当前：${AppTheme.label(widget.store.themeMode)} · 深色模式与品牌色彩'),
+                    subtitle: Text(
+                      '当前：${AppTheme.label(widget.store.themeMode)} · 深色模式与品牌色彩',
+                    ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => Navigator.push(
                       context,
@@ -147,7 +146,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute<void>(
-                        builder: (_) => PlaybackSettingsPage(store: widget.store),
+                        builder: (_) =>
+                            PlaybackSettingsPage(store: widget.store),
                       ),
                     ),
                   ),
@@ -156,7 +156,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Divider(height: 1, indent: 56),
                     SwitchListTile.adaptive(
                       key: const ValueKey('settings-main-pip-switch'),
-                      secondary: const Icon(Icons.picture_in_picture_alt_rounded),
+                      secondary: const Icon(
+                        Icons.picture_in_picture_alt_rounded,
+                      ),
                       title: const Text('画中画模式'),
                       subtitle: Text(
                         playPrefs.pictureInPicture
@@ -167,7 +169,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       activeThumbColor: AppColors.white,
                       activeTrackColor: AppColors.hongguoRed,
                       onChanged: (val) async {
-                        final updated = playPrefs.copyWith(pictureInPicture: val);
+                        final updated = playPrefs.copyWith(
+                          pictureInPicture: val,
+                        );
                         await saveUserChange(
                           context,
                           () => widget.store.setPlaybackPreferences(updated),
@@ -187,13 +191,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: const ValueKey('settings-switch-source'),
                     leading: const Icon(Icons.swap_horiz_rounded),
                     title: const Text('切换当前数据源'),
-                    subtitle: Text('当前正在使用：${SourceSite.byId(widget.store.source).name} · 轻触切换可用站源'),
+                    subtitle: Text(
+                      '当前正在使用：${SourceSite.byId(widget.store.source).name} · 轻触切换可用站源',
+                    ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => showSourceSwitcherSheet(
                       context,
                       store: widget.store,
                       onSelect: (site) {
-                        saveUserChange(context, () => widget.store.setSource(site.id));
+                        saveUserChange(
+                          context,
+                          () => widget.store.setSource(site.id),
+                        );
                       },
                     ),
                   ),
@@ -227,7 +236,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   if (widget.repository.supportsSourceManagement &&
-                      (widget.store.isZhenguojianActivated || widget.store.sources.length > 1))
+                      (widget.store.isZhenguojianActivated ||
+                          widget.store.sources.length > 1))
                     ListTile(
                       leading: const Icon(Icons.speed_rounded),
                       title: const Text('站源管理'),
@@ -255,12 +265,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ListTile(
                       leading: const Icon(Icons.video_settings_rounded),
                       title: const Text('离线下载偏好'),
-                      subtitle: Text('清晰度：${widget.store.downloadPreferences.qualityLabel}'),
+                      subtitle: Text(
+                        '清晰度：${widget.store.downloadPreferences.qualityLabel}',
+                      ),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute<void>(
-                          builder: (_) => DownloadPreferencesScreen(store: widget.store),
+                          builder: (_) =>
+                              DownloadPreferencesScreen(store: widget.store),
                         ),
                       ),
                     ),
@@ -293,7 +306,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       leading: const Icon(Icons.cloud_sync_rounded),
                       title: const Text('iCloud 云端同步'),
                       subtitle: Text(
-                        ICloudSyncService.instance.isSyncEnabled(widget.store.preferences)
+                        ICloudSyncService.instance.isSyncEnabled(
+                              widget.store.preferences,
+                            )
                             ? '已开启 · 自动在 iOS、macOS 与 Apple TV 间同步'
                             : '已停用 · 轻触开启苹果生态多端同步',
                       ),
@@ -325,37 +340,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-
-              // 6. 隐私与安全
-              SettingsGroupCard(
-                title: '隐私与安全',
-                icon: Icons.security_rounded,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.lock_outline_rounded),
-                    title: const Text('手势密码与隐私短剧库'),
-                    subtitle: Text(
-                      PrivacyLockController(widget.store.preferences).enabled
-                          ? '已启用手势解锁 · 保护私密短剧'
-                          : '手势隐私锁 · 隐私短剧库密码保护',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute<void>(
-                          builder: (_) => PrivacySettingsPage(
-                            controller: PrivacyLockController(widget.store.preferences),
-                            repository: widget.repository,
-                            store: widget.store,
-                          ),
-                        ),
-                      );
-                      if (mounted) setState(() {});
-                    },
                   ),
                 ],
               ),

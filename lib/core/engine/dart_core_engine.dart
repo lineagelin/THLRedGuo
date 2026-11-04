@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:THLRedLook/core/js/catpaw_js_runtime.dart';
 import 'package:THLRedLook/core/js/js_source_models.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
+import 'package:THLRedLook/core/diagnostics/source_diagnostics.dart';
+import 'package:THLRedLook/utils/diary/diary_service.dart';
 import 'package:THLRedLook/utils/media/cover_decoder.dart';
 
 /// 纯 Dart 核心调度引擎：
@@ -590,7 +592,10 @@ class DartCoreEngine {
       final runtime = await _spiderPool.get(source, script, scope: scope);
       if (detailId != null) _spiderPool.shareDetail(source, detailId, runtime);
       return runtime;
-    } catch (_) {
+    } catch (error) {
+      DiaryService.add(
+        '[Source] $source/$scope 初始化失败: ${SourceDiagnostics.redact(error.toString())}',
+      );
       return null;
     }
   }

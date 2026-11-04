@@ -51,14 +51,7 @@ class LocalStore extends ChangeNotifier {
   String? _configurationError;
   int _epoch = 0;
   int _failures = 0;
-  bool _sourcesUnlocked = false;
-  bool _gateEnabled = false;
-  bool _gateOff = false;
-  String _gateSalt = '';
-  String _gateHash = '';
   DateTime _retryAfter = DateTime(2000);
-  static const _keyPrivateSources = 'private_sources_set';
-  final Set<String> _privateSources = {};
 
   void _initialize() {
     try {
@@ -80,9 +73,8 @@ class LocalStore extends ChangeNotifier {
       }
       _configurationError = null;
       _locked = forceLogin && profile.protected;
-      _loadSourceGate();
+      _loadSourceActivation();
       _loadLibrary();
-      _loadPrivateSources();
       if (keepScreenOn) {
         ScreenWakeController.instance.sync(true);
       }
@@ -113,7 +105,6 @@ class LocalStore extends ChangeNotifier {
   void _block(String message) {
     _configurationError = message;
     _locked = true;
-    _sourcesUnlocked = false;
     _profiles = [
       const LocalProfile(id: 'default', name: '配置待恢复', download: false),
     ];
@@ -155,167 +146,26 @@ class LocalStore extends ChangeNotifier {
     if (jsSources != null && jsSources.any((s) => s.id == source)) {
       return true;
     }
-    return SourceSite.isAvailable(source) &&
-        profile.allows(source) &&
-        (isZhenguojianActivated ||
-            _gateOff ||
-            _sourcesUnlocked ||
-            SourceSite.isPrimary(source));
+    return SourceSite.isAvailable(source) && profile.allows(source);
   }
 
   List<SourceSite> get sources => SourceSite.visibleValues(
-    unlocked: isZhenguojianActivated || _gateOff || _sourcesUnlocked,
+    unlocked: true,
   ).where((site) => allowsSource(site.id)).toList();
 
-  /// 默认隐藏的站源是否已解锁。解锁状态只在本次运行内有效，重启后恢复隐藏。
-  bool get sourcesUnlocked =>
-      isZhenguojianActivated || _gateOff || _sourcesUnlocked;
-
-  /// 是否已启用站源密码锁。
-  bool get sourceGateEnabled => _gateEnabled;
-
-  bool get sourceGateConfigured => _gateSalt.isNotEmpty && _gateHash.isNotEmpty;
-
-  /// 当前是否处于「不使用密码、显示全部站源」状态。
-  bool get sourceGateOff => _gateOff;
-
-  /// 是否已激活全功能模式。
   bool get isZhenguojianActivated => SourceSite.isZhenguojianActivated;
 
-  void _loadSourceGate() {
+  void _loadSourceActivation() {
     final zhenguojian = _bool('zhenguojianActivated') ?? false;
     if (zhenguojian) {
       SourceSite.activateAllSources();
     }
-    final enabled = _bool('sourceGateEnabled') ?? false;
-    final off = _bool('sourceGateOff') ?? (zhenguojian ? true : false);
-    final salt = _string('sourceGateSalt') ?? '';
-    final hash = _string('sourceGateHash') ?? '';
-    final valid =
-        enabled &&
-        RegExp(r'^[a-f0-9]{32}$').hasMatch(salt) &&
-        RegExp(r'^[a-f0-9]{64}$').hasMatch(hash);
-    _gateEnabled = valid;
-    _gateOff = !valid && off;
-    _gateSalt = valid ? salt : '';
-    _gateHash = valid ? hash : '';
-    _sourcesUnlocked = zhenguojian;
   }
-
-  void _loadPrivateSources() {
-    _privateSources.clear();
-    final list = preferences.getStringList(_keyPrivateSources);
-    if (list != null) {
-      _privateSources.addAll(list);
-    }
-  }
-
-  /// 所有被标记为隐私模式的数据源 ID 集合。
-  Set<String> get privateSources => Set.unmodifiable(_privateSources);
-
-  /// 检查某数据源是否处于隐私模式。
-  bool isPrivateSource(String sourceId) => _privateSources.contains(sourceId);
-
-  /// 设置或取消某个数据源的隐私模式。
-  Future<void> setSourcePrivate(String sourceId, bool isPrivate) =>
-      _queue(() async {
-        if (isPrivate) {
-          _privateSources.add(sourceId);
-        } else {
-          _privateSources.remove(sourceId);
-        }
-        await preferences.setStringList(
-          _keyPrivateSources,
-          _privateSources.toList(),
-        );
-        _notify();
-      });
 
   /// 激活全功能模式：解锁全部站源，并使全部站源默认可见。
   Future<void> activateZhenguojian() => _queue(() async {
     SourceSite.activateAllSources();
-    await _commit({'zhenguojianActivated': true, 'sourceGateOff': true});
-    _gateOff = true;
-    _sourcesUnlocked = true;
-    _notify();
-  });
-
-  Future<void> _checkSourcePin(String pin) async {
-    if (DateTime.now().isBefore(_retryAfter)) {
-      throw StateError('密码输入过于频繁，请稍后再试');
-    }
-    final actual = await _pinHasher(pin, _gateSalt);
-    var difference = actual.length ^ _gateHash.length;
-    for (var i = 0; i < actual.length && i < _gateHash.length; i++) {
-      difference |= actual.codeUnitAt(i) ^ _gateHash.codeUnitAt(i);
-    }
-    if (difference != 0) {
-      _failures++;
-      if (_failures >= 3) {
-        _retryAfter = DateTime.now().add(
-          Duration(seconds: (_failures * 2).clamp(0, 30)),
-        );
-      }
-      throw StateError('密码不正确');
-    }
-    _failures = 0;
-  }
-
-  /// 校验密码并解锁默认隐藏的站源（仅本次运行有效）。
-  Future<void> unlockSources(String pin) => _queue(() async {
-    if (_configurationError != null) throw StateError('本地用户配置损坏，请先恢复');
-    if (!_gateEnabled) throw StateError('尚未启用站源密码锁');
-    await _checkSourcePin(pin);
-    if (!_sourcesUnlocked) {
-      _sourcesUnlocked = true;
-      _notify();
-    }
-  });
-
-  /// 重新隐藏默认隐藏的站源，无需重启。
-  void lockSources() {
-    if (!_gateEnabled || !_sourcesUnlocked) return;
-    _sourcesUnlocked = false;
-    _notify();
-  }
-
-  /// 设置或更换密码锁，并立即解锁。
-  Future<void> enableSourceGate(String pin) => _queue(() async {
-    _requireAdmin();
-    final value = pin.trim();
-    if (!RegExp(r'^\d{3,12}$').hasMatch(value)) {
-      throw StateError('密码需要 3 至 12 位数字');
-    }
-    final salt = randomProfileToken();
-    final hash = await _pinHasher(value, salt);
-    await _commit({
-      'sourceGateEnabled': true,
-      'sourceGateOff': false,
-      'sourceGateSalt': salt,
-      'sourceGateHash': hash,
-    });
-    _gateEnabled = true;
-    _gateOff = false;
-    _gateSalt = salt;
-    _gateHash = hash;
-    _sourcesUnlocked = true;
-    _notify();
-  });
-
-  /// 关闭密码功能，恢复全部站源可见。
-  Future<void> disableSourceGate() => _queue(() async {
-    _requireAdmin();
-    await _commit({
-      'sourceGateEnabled': false,
-      'sourceGateOff': true,
-      'sourceGateSalt': '',
-      'sourceGateHash': '',
-    });
-    _gateEnabled = false;
-    _gateOff = true;
-    _gateSalt = '';
-    _gateHash = '';
-    _sourcesUnlocked = false;
+    await _commit({'zhenguojianActivated': true});
     _notify();
   });
 
@@ -390,8 +240,7 @@ class LocalStore extends ChangeNotifier {
         .where(
           (entry) =>
               _dramaSource(entry.drama) == sourceId &&
-              allowsSource(entry.drama.source) &&
-              !_privateSources.contains(entry.drama.source),
+              allowsSource(entry.drama.source),
         )
         .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -418,11 +267,7 @@ class LocalStore extends ChangeNotifier {
 
   List<WatchEntry> get history =>
       _history.values
-          .where(
-            (entry) =>
-                allowsSource(entry.drama.source) &&
-                !_privateSources.contains(entry.drama.source),
-          )
+          .where((entry) => allowsSource(entry.drama.source))
           .toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   List<Drama> get favorites => _favorites.values
@@ -442,11 +287,7 @@ class LocalStore extends ChangeNotifier {
         entry = lanDocument.records[id]?.watch;
       } catch (_) {}
     }
-    return entry != null &&
-            allowsSource(entry.drama.source) &&
-            !_privateSources.contains(entry.drama.source)
-        ? entry
-        : null;
+    return entry != null && allowsSource(entry.drama.source) ? entry : null;
   }
 
   bool isFavorite(String id) {
@@ -525,10 +366,7 @@ class LocalStore extends ChangeNotifier {
     return {'auto', 'television', 'standard'}.contains(value) ? value! : 'auto';
   }
 
-  String get themeMode {
-    final value = _configurationError == null ? _string('themeMode') : null;
-    return {'light', 'dark', 'system'}.contains(value) ? value! : 'system';
-  }
+  String get themeMode => 'dark';
 
   bool get keepScreenOn =>
       _configurationError == null ? (_bool('keepScreenOn') ?? false) : false;
@@ -660,9 +498,9 @@ class LocalStore extends ChangeNotifier {
 
   int stepFeedOffset([int step = 6]) {
     _feedOffset = (_feedOffset + step) % 60;
-    unawaited(_commit({
-      _key('feedOffset'): _feedOffset.toString(),
-    }, trackSync: false));
+    unawaited(
+      _commit({_key('feedOffset'): _feedOffset.toString()}, trackSync: false),
+    );
     return _feedOffset;
   }
 
@@ -672,9 +510,7 @@ class LocalStore extends ChangeNotifier {
       if (locked || epoch != _epoch) return;
       _feedSeenIds.clear();
       _feedSeenSet.clear();
-      await _commit({
-        _key('feedSeenDramas'): jsonEncode([]),
-      }, trackSync: false);
+      await _commit({_key('feedSeenDramas'): jsonEncode([])}, trackSync: false);
     });
   }
 
@@ -862,7 +698,7 @@ class LocalStore extends ChangeNotifier {
       entry.position >= 0 &&
       entry.duration > 0;
 
-  Future<void> saveWatch(WatchEntry entry) {
+  Future<void> saveWatch(WatchEntry entry, {bool completedDrama = false}) {
     if (!_validWatch(entry)) return Future.value();
     final epoch = _epoch;
     return _queue(() async {
@@ -879,14 +715,26 @@ class LocalStore extends ChangeNotifier {
       final entries = Map.of(_history)..[entry.drama.id] = current;
       final sorted = entries.values.toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      final following = _followStates[entry.drama.id];
+      final autoComplete =
+          completedDrama &&
+          current.finished &&
+          current.drama.episodes > 0 &&
+          current.episode >= current.drama.episodes;
+      final following =
+          _followStates[entry.drama.id] ??
+          (autoComplete && _favorites.length < 20000
+              ? FollowState.initial(current.drama, null)
+              : null);
       final states = Map.of(_followStates);
       final favorites = Map.of(_favorites);
       if (following != null) {
-        states[entry.drama.id] = following.afterPlayback(current);
-        favorites[entry.drama.id] = favorites[entry.drama.id]!.merge(
-          current.drama,
-        );
+        var next = following.afterPlayback(current);
+        if (autoComplete && next.status == FollowStatus.watched) {
+          next = next.copyWith(readEpisodes: next.knownEpisodes);
+        }
+        states[entry.drama.id] = next;
+        favorites[entry.drama.id] =
+            favorites[entry.drama.id]?.merge(current.drama) ?? current.drama;
       }
       await _commit({
         _key('history'): jsonEncode(
@@ -1526,7 +1374,7 @@ class LocalStore extends ChangeNotifier {
     _current = profiles.firstWhere((profile) => profile.admin).id;
     _configurationError = null;
     _locked = forceLogin && profile.protected;
-    _loadSourceGate();
+    _loadSourceActivation();
     _loadLibrary();
     _epoch++;
     _notify();

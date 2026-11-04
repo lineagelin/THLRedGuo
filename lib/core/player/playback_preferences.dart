@@ -23,6 +23,7 @@ class PlaybackPreferences {
     this.preload = true,
     this.enhancement = const VideoEnhancementPreferences(),
     this.decoderMode = PlaybackDecoderMode.hardware,
+    this.playerTextScale = 1.0,
   });
 
   final double speed;
@@ -34,6 +35,7 @@ class PlaybackPreferences {
   final bool preload;
   final VideoEnhancementPreferences enhancement;
   final PlaybackDecoderMode decoderMode;
+  final double playerTextScale;
 
   PlaybackPreferences copyWith({
     double? speed,
@@ -45,6 +47,7 @@ class PlaybackPreferences {
     bool? preload,
     VideoEnhancementPreferences? enhancement,
     PlaybackDecoderMode? decoderMode,
+    double? playerTextScale,
   }) => PlaybackPreferences(
     speed: speed ?? this.speed,
     quality: quality ?? this.quality,
@@ -55,6 +58,7 @@ class PlaybackPreferences {
     preload: preload ?? this.preload,
     enhancement: enhancement ?? this.enhancement,
     decoderMode: decoderMode ?? this.decoderMode,
+    playerTextScale: playerTextScale ?? this.playerTextScale,
   );
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +71,7 @@ class PlaybackPreferences {
     'preload': preload,
     'enhancement': enhancement.toJson(),
     'decoderMode': decoderMode.name,
+    'playerTextScale': playerTextScale,
   };
 
   factory PlaybackPreferences.fromJson(Map<String, dynamic> value) {
@@ -97,6 +102,7 @@ class PlaybackPreferences {
       preload: preload,
       enhancement: VideoEnhancementPreferences.fromJson(value['enhancement']),
       decoderMode: decoderMode,
+      playerTextScale: 1.0,
     );
   }
 }

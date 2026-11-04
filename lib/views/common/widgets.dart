@@ -106,6 +106,7 @@ class DramaTile extends StatelessWidget {
     this.onMore,
     this.onLongPress,
     this.heroTag,
+    this.showCoverOverlay = true,
   });
   final Drama drama;
   final AppRepository repository;
@@ -119,6 +120,7 @@ class DramaTile extends StatelessWidget {
   final VoidCallback? onMore;
   final VoidCallback? onLongPress;
   final String? heroTag;
+  final bool showCoverOverlay;
 
   static double titleHeight(BuildContext context) =>
       MediaQuery.textScalerOf(
@@ -153,7 +155,8 @@ class DramaTile extends StatelessWidget {
                   drama: drama,
                   repository: repository,
                   radius: 14,
-                  showEpisodeCount: badge == null || badge!.isEmpty,
+                  showEpisodeCount: false,
+                  showOverlay: showCoverOverlay,
                 ),
               ),
               if (badge != null && badge!.isNotEmpty)
@@ -172,10 +175,7 @@ class DramaTile extends StatelessWidget {
                         vertical: 4,
                       ),
                       child: Text(
-                        [
-                          badge!,
-                          if (drama.episodes > 0) '共 ${drama.episodes} 集',
-                        ].join(' · '),
+                        badge!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -232,14 +232,26 @@ class DramaTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: SizedBox(
             height: subtitleHeight(context),
-            child: Text(
-              subtitle ?? drama.displayCategory,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: DefaultTextStyle(
               style: TextStyle(
                 fontSize: television ? 14 : 12,
                 height: 1.3,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      subtitle ?? drama.displayCategory,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (drama.episodes > 0) ...[
+                    const SizedBox(width: 6),
+                    Text('全${drama.episodes}集'),
+                  ],
+                ],
               ),
             ),
           ),
@@ -336,9 +348,21 @@ class StatusPanel extends StatelessWidget {
   );
 }
 
-SliverGridDelegate dramaGridDelegate(BuildContext context, double width) {
-  final columns = width < 600 ? 3 : (width / 180).floor().clamp(4, 9);
+SliverGridDelegate dramaGridDelegate(
+  BuildContext context,
+  double width, {
+  int? columnCount,
+  double? minimumTileWidth,
+}) {
   final spacing = width < 600 ? 10.0 : 18.0;
+  final columns =
+      columnCount ??
+      (minimumTileWidth == null
+          ? (width < 600 ? 3 : (width / 180).floor().clamp(4, 9))
+          : ((width + spacing) / (minimumTileWidth + spacing)).floor().clamp(
+              1,
+              9,
+            ));
   final tileWidth = (width - (columns - 1) * spacing) / columns;
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: columns,

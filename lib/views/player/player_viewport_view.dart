@@ -62,6 +62,9 @@ class PlayerViewportView extends StatelessWidget {
     required this.store,
     this.videoBuilder,
     this.controlsOverlay,
+    this.hideDanmaku = false,
+    this.cleanScreen = false,
+    this.fillScreen = false,
     required this.onTogglePlayback,
     required this.onSeek,
     required this.onSeekTo,
@@ -81,9 +84,11 @@ class PlayerViewportView extends StatelessWidget {
     required this.onTelevisionEpisodes,
     required this.onTelevisionSettings,
     this.topPadding = 0.0,
+    this.danmakuTopInset = 0.0,
   });
 
   final double topPadding;
+  final double danmakuTopInset;
   final bool television;
   final bool fullscreen;
   final bool pictureInPictureVisible;
@@ -121,6 +126,9 @@ class PlayerViewportView extends StatelessWidget {
   final LocalStore store;
   final Widget Function(Widget child)? videoBuilder;
   final Widget? controlsOverlay;
+  final bool hideDanmaku;
+  final bool cleanScreen;
+  final bool fillScreen;
 
   final VoidCallback onTogglePlayback;
   final void Function(int) onSeek;
@@ -146,8 +154,10 @@ class PlayerViewportView extends StatelessWidget {
     final videoTheme = television
         ? televisionTheme(AppTheme.dark)
         : AppTheme.dark;
-    final isHongguo = detail.drama.source == 'hongguo' || detail.drama.id.startsWith('hongguo:');
-    final isVipEp = !isHongguo && detail.episodes[index].vip;
+    final isHongguo =
+        detail.drama.source == 'hongguo' ||
+        detail.drama.id.startsWith('hongguo:');
+    final isVipEp = !mobile && !isHongguo && detail.episodes[index].vip;
     final title =
         '${detail.drama.title} · 第 ${detail.episodes[index].number} 集${plan?.offline == true ? ' · 本地' : ''}${isVipEp ? ' · VIP 试看' : ''}${(plan?.routeIndex ?? 0) > 0 ? ' · 线路 ${plan!.routeIndex + 1}' : ''}';
     final hideOverlayForPictureInPicture = pictureInPictureVisible;
@@ -237,7 +247,10 @@ class PlayerViewportView extends StatelessWidget {
                           FilledButton.icon(
                             key: const ValueKey('player-pip-restore-btn'),
                             onPressed: onRestorePictureInPicture,
-                            icon: const Icon(Icons.fullscreen_rounded, size: 18),
+                            icon: const Icon(
+                              Icons.fullscreen_rounded,
+                              size: 18,
+                            ),
                             label: const Text('恢复应用内播放'),
                             style: FilledButton.styleFrom(
                               backgroundColor: AppColors.hongguoRed,
@@ -334,11 +347,14 @@ class PlayerViewportView extends StatelessWidget {
     final layeredControls = Stack(
       fit: StackFit.expand,
       children: [
-        if (!hideOverlayForPictureInPicture)
-          DanmakuOverlay(
-            controller: danmaku,
-            aspectRatio: aspectRatio,
-            style: danmakuStyle ?? const DanmakuStyle(),
+        if (!hideOverlayForPictureInPicture && !hideDanmaku)
+          Padding(
+            padding: EdgeInsets.only(top: danmakuTopInset),
+            child: DanmakuOverlay(
+              controller: danmaku,
+              aspectRatio: aspectRatio,
+              style: danmakuStyle ?? const DanmakuStyle(),
+            ),
           ),
         controlsOverlay ?? controls,
       ],
@@ -363,7 +379,7 @@ class PlayerViewportView extends StatelessWidget {
                 child: IgnorePointer(child: SizedBox.expand(key: videoPaneKey)),
               ),
               // 0. 最底层托底背景（电视大屏使用纯黑底衬，避免彩色漫反射破坏电视背光分区控光与黑位对比度；移动端保留适度毛玻璃）
-              if (!television)
+              if (!television && !mobile)
                 DramaBackdrop(
                   drama: detail.drama,
                   repository: repository,
@@ -385,73 +401,79 @@ class PlayerViewportView extends StatelessWidget {
                     else if (player is LunaExoPlayer)
                       LunaExoVideoView(
                         player: player as LunaExoPlayer,
-                        fit: BoxFit.contain,
+                        fit: fillScreen ? BoxFit.cover : BoxFit.contain,
                         controls: (_) => layeredControls,
                       )
                     else if (videoController != null)
                       Video(
                         controller: videoController!,
-                        fit: BoxFit.contain,
+                        fit: fillScreen ? BoxFit.cover : BoxFit.contain,
                         controls: (_) => layeredControls,
                       ),
-                    if (loading && !hideOverlayForPictureInPicture)
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppColors.blackWithAlpha(0.60),
-                        ),
-                        child: Center(
-                          child: SingleChildScrollView(
-                            physics: const NeverScrollableScrollPhysics(),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Hero(
-                                  tag: 'drama-cover-${detail.drama.id}',
-                                  child: Container(
-                                    width: 104,
-                                    height: 156,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color(0x77000000),
-                                          blurRadius: 24,
-                                          offset: Offset(0, 10),
-                                        ),
-                                      ],
+                    if (loading &&
+                        !hideOverlayForPictureInPicture &&
+                        !cleanScreen)
+                      IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.blackWithAlpha(0.60),
+                          ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              physics: const NeverScrollableScrollPhysics(),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Hero(
+                                    tag: 'drama-cover-${detail.drama.id}',
+                                    child: Container(
+                                      width: 104,
+                                      height: 156,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0x77000000),
+                                            blurRadius: 24,
+                                            offset: Offset(0, 10),
+                                          ),
+                                        ],
+                                      ),
+                                      child: DramaCover(
+                                        drama: detail.drama,
+                                        repository: repository,
+                                        radius: 14,
+                                      ),
                                     ),
-                                    child: DramaCover(
-                                      drama: detail.drama,
-                                      repository: repository,
-                                      radius: 14,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  const SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: AppColors.hongguoRed,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 20),
-                                const SizedBox(
-                                  width: 26,
-                                  height: 26,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: AppColors.hongguoRed,
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    loadingMessage,
+                                    style: const TextStyle(
+                                      color: AppColors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.3,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  loadingMessage,
-                                  style: const TextStyle(
-                                    color: AppColors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    if (error != null && !hideOverlayForPictureInPicture)
+                    if (error != null &&
+                        !hideOverlayForPictureInPicture &&
+                        !cleanScreen)
                       ColoredBox(
                         color: AppColors.blackWithAlpha(0.9),
                         child: StatusPanel(
@@ -494,6 +516,7 @@ class PlayerViewportView extends StatelessWidget {
                 ),
               ),
               if ((loading || error != null) &&
+                  !cleanScreen &&
                   !hideOverlayForPictureInPicture &&
                   fullscreen &&
                   !television)
@@ -517,7 +540,9 @@ class PlayerViewportView extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (saveWarning != null && !hideOverlayForPictureInPicture)
+              if (saveWarning != null &&
+                  !hideOverlayForPictureInPicture &&
+                  !cleanScreen)
                 Positioned(
                   top: 52,
                   left: 12,

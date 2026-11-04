@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:THLRedLook/utils/screen/app_layout.dart';
 
 import 'package:THLRedLook/core/download/batch_downloads.dart';
 import 'package:THLRedLook/core/bridge/core_bridge.dart';
@@ -119,7 +120,9 @@ class _BatchDownloadScreenState extends State<BatchDownloadScreen> {
                             CheckboxListTile(
                               contentPadding: EdgeInsets.zero,
                               title: const Text('包含 VIP 分集'),
-                              subtitle: const Text('VIP 集可能只能下载试看内容'),
+                              subtitle: AppLayout.isMobile(context)
+                                  ? null
+                                  : const Text('VIP 集可能只能下载试看内容'),
                               value: _batch.includeVip,
                               onChanged: _batch.busy || _batch.settingsLocked
                                   ? null

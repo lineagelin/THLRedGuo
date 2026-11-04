@@ -19,7 +19,7 @@ import 'package:THLRedLook/views/catalog/catalog_sort_sheet.dart';
 import 'package:THLRedLook/pages/recommendations/recommendations_page.dart';
 import 'package:THLRedLook/pages/rankings/rankings_page.dart';
 import 'package:THLRedLook/pages/detail/detail_page.dart';
-import 'package:THLRedLook/pages/downloads/downloads_page.dart';
+import 'package:THLRedLook/pages/player/playback_launch_page.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/views/remote/remote_widgets.dart';
@@ -33,7 +33,7 @@ import 'package:THLRedLook/pages/downloads/batch_download_page.dart';
 import 'package:THLRedLook/core/download/batch_downloads.dart';
 import 'package:THLRedLook/views/drama/drama_actions.dart';
 import 'package:THLRedLook/core/store/library_updater.dart';
-import 'package:THLRedLook/core/store/saved_library.dart';
+import 'package:THLRedLook/pages/account/my_page.dart';
 import 'package:THLRedLook/views/home/home_selection_bar_view.dart';
 import 'package:THLRedLook/views/home/home_search_bar_view.dart';
 import 'package:THLRedLook/views/home/home_catalog_view.dart';
@@ -494,7 +494,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     if (widget.initialTab != 0) {
-      _tab = widget.initialTab;
+      _tab = {0, 4, 5}.contains(widget.initialTab) ? widget.initialTab : 5;
     }
     if (widget.initialSearchVisible) {
       _searchVisible = true;
@@ -661,7 +661,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (error) {
       if (!mounted || generation != _generation) return;
       final errorStr = error.toString();
-      final isCursorExpired = errorStr.contains('CURSOR_EXPIRED') ||
+      final isCursorExpired =
+          errorStr.contains('CURSOR_EXPIRED') ||
           errorStr.contains('MISSING_CURSOR') ||
           errorStr.contains('游标');
       if (isCursorExpired && more) {
@@ -782,13 +783,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _pauseCatalog();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DetailScreen(
-          drama: drama,
-          repository: widget.repository,
-          store: widget.store,
-          resumeOnOpen: resume,
-          downloadOnOpen: download,
-        ),
+        builder: (_) => download
+            ? DetailScreen(
+                drama: drama,
+                repository: widget.repository,
+                store: widget.store,
+                downloadOnOpen: true,
+              )
+            : PlaybackLaunchScreen(
+                drama: drama,
+                repository: widget.repository,
+                store: widget.store,
+              ),
       ),
     );
   }
@@ -861,21 +867,17 @@ class _HomeScreenState extends State<HomeScreen> {
     VoidCallback? onFocus,
   }) {
     final following = widget.store.following(drama.id);
-    final canSelect =
-        widget.store.canDownload && widget.repository.supportsDownloads;
     return DramaTile(
       key: ValueKey(drama.id),
+      showCoverOverlay: false,
       drama: drama,
       repository: widget.repository,
       focusNode: focusNode,
       onFocus: onFocus,
       onTap: () => _selectionMode ? _selectDrama(drama) : _openDrama(drama),
-      onLongPress: canSelect ? () => _selectDrama(drama) : null,
+      onLongPress: () => _dramaActions(drama),
       onMore: () => _dramaActions(drama),
-      actions: DramaActionButton(
-        drama: drama,
-        onPressed: () => _dramaActions(drama),
-      ),
+
       selected: _selectionMode ? _selectedDramas.containsKey(drama.id) : null,
       badge: following == null
           ? null
@@ -1298,7 +1300,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.store,
+    animation: Listenable.merge([widget.store, _feed]),
     builder: (context, _) => LayoutBuilder(
       builder: (context, constraints) {
         final television = AppLayout.isTelevision(context);
@@ -1306,17 +1308,15 @@ class _HomeScreenState extends State<HomeScreen> {
         final destinations = [
           (0, Icons.explore_outlined, Icons.explore, '发现'),
           (4, Icons.play_circle_outline, Icons.play_circle, '推荐'),
-          (1, Icons.bookmark_border_rounded, Icons.bookmark_rounded, '追剧'),
-          (2, Icons.history_rounded, Icons.history_rounded, '最近观看'),
-          if (widget.store.canDownload)
-            (3, Icons.download_outlined, Icons.download_rounded, '下载'),
+          (5, Icons.person_outline_rounded, Icons.person_rounded, '我的'),
         ];
         final navIndex = destinations.indexWhere((item) => item.$1 == _tab);
         final scaffold = Scaffold(
-          appBar: _tab == 4
+          extendBodyBehindAppBar: _tab == 4,
+          appBar: _tab == 4 && _feed.cleanScreen
               ? null
               : HomeAppBarView(
-                  selectionMode: _selectionMode,
+                  selectionMode: _tab == 0 && _selectionMode,
                   selectedEmpty: _selectedDramas.isEmpty,
                   tab: _tab,
                   sourceGroups: _sourceGroups,
@@ -1348,7 +1348,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   onChooseCatalogView: _chooseCatalogView,
                   onOpenRankings: _openRankings,
                   onStartSelection: () => setState(() => _selectionMode = true),
-                  onToggleSearch: _toggleSearch,
+                  onToggleSearch: () {
+                    if (_tab == 4) {
+                      _onNavSelected(0);
+                      if (!_searchVisible) _toggleSearch();
+                    } else {
+                      _toggleSearch();
+                    }
+                  },
+                  onFeedRefresh: () => unawaited(_feed.refresh()),
+                  onFeedMenu: () => unawaited(
+                    _feed.openPlayerMenu?.call() ?? Future<void>.value(),
+                  ),
                   onRefreshCatalog: _refreshCatalog,
                   onMoreAction: _handleHomeMoreAction,
                   onOpenSourceSwitcher: _openSourceSwitcher,
@@ -1463,26 +1474,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                           selectionInBody:
                                               desktop || television,
                                         )
-                                : _tab == 3
-                                ? DownloadsScreen(
+                                : MyPage(
+                                    showHeader: false,
                                     repository: widget.repository,
                                     store: widget.store,
-                                    embedded: true,
-                                  )
-                                : SavedLibrary(
-                                    key: ValueKey('saved-tab-$_tab'),
-                                    repository: widget.repository,
-                                    store: widget.store,
-                                    history: _tab == 2,
-                                    onOpen: _openDrama,
-                                    onContinue: (drama) =>
-                                        _openDrama(drama, resume: true),
-                                    onDownload:
-                                        widget.repository.supportsDownloads &&
-                                            widget.store.canDownload
-                                        ? (drama) =>
-                                              _openDrama(drama, download: true)
-                                        : null,
+                                    onSwitchSource: _openSourceSwitcher,
                                   ),
                           ),
                         ),
@@ -1495,6 +1491,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 key: const ValueKey('home-video-feed'),
                                 controller: _feed,
                                 active: _tab == 4,
+                                onSearch: () {
+                                  _onNavSelected(0);
+                                  if (!_searchVisible) _toggleSearch();
+                                },
                               ),
                             ),
                           ),
@@ -1549,30 +1549,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _catalog({required bool selectionInBody}) {
     final items = _visible;
     final television = AppLayout.isTelevision(context);
-    final sourceChip =
-        (widget.store.isZhenguojianActivated || widget.store.sources.length > 1)
-        ? Padding(
-            key: const ValueKey('catalog-source-chip'),
-            padding: const EdgeInsets.only(right: 8),
-            child: ActionChip(
-              avatar: const Icon(Icons.swap_horiz_rounded, size: 16),
-              label: Text(_group.name),
-              tooltip: '切换数据源（当前：${_group.name}）',
-              shape: const StadiumBorder(),
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              labelStyle: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-              side: BorderSide(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.3),
-              ),
-              onPressed: _openSourceSwitcher,
-            ),
-          )
-        : null;
     return Column(
       children: [
         if (_searchVisible && !television)
@@ -1593,7 +1569,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         CatalogFilters(
           key: ValueKey('filters-${_group.id}'),
-          leading: sourceChip,
           categories: _displayCategories,
           category: _displayCategory,
           error: _categoriesError,
@@ -1684,9 +1659,7 @@ class _HomeScreenState extends State<HomeScreen> {
               gridKey: 'catalog-${_group.id}-$_category-$_submittedQuery',
               loadingMessage: _search.text.trim().isNotEmpty
                   ? '正在搜索相关短剧...'
-                  : (_category.isNotEmpty
-                        ? '正在获取分类短剧...'
-                        : '正在加载精选短剧...'),
+                  : (_category.isNotEmpty ? '正在获取分类短剧...' : '正在加载精选短剧...'),
               loadingHint: '数据加载中，请稍候片刻',
               onRetryLoad: () => _load(force: true),
               onLoadMore: () => _load(more: true),

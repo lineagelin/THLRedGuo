@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:THLRedLook/utils/screen/app_layout.dart';
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 
 class RemoteTarget extends StatefulWidget {
@@ -426,7 +427,7 @@ class RemoteEpisodeButton extends StatelessWidget {
     borderWidth: compact ? 0.8 : 1.2,
     outlined: true,
     onPressed: onPressed,
-    label: '第 $number 集${vip ? '，VIP 试看' : ''}',
+    label: '第 $number 集${vip && !AppLayout.isMobile(context) ? '，VIP 试看' : ''}',
     child: Center(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -442,7 +443,7 @@ class RemoteEpisodeButton extends StatelessWidget {
               ),
             ),
           ),
-          if (vip) ...[
+          if (vip && !AppLayout.isMobile(context)) ...[
             SizedBox(width: compact ? 2 : 4),
             Icon(
               Icons.workspace_premium_rounded,

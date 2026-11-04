@@ -21,7 +21,7 @@ if (releaseKey.exists()) {
 }
 
 android {
-    namespace = "com.duanju.duanju_app"
+    namespace = "com.line.redlook"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -31,13 +31,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.never88gone.redlook"
+        applicationId = "com.line.redlook"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         val rawCode = runCatching { flutter.versionCode }.getOrNull()
         versionCode = if (rawCode != null && rawCode > 0 && rawCode < 2100000000) rawCode else (System.currentTimeMillis() / 1000).toInt()
         versionName = flutter.versionName ?: "1.0.0"
-        manifestPlaceholders["appLabel"] = "糖葫芦Haw"
+        manifestPlaceholders["appLabel"] = "糖葫芦"
         manifestPlaceholders["appBanner"] = if (allSources) "@drawable/tv_banner_all_sources" else "@drawable/tv_banner"
     }
 
@@ -76,6 +76,15 @@ kotlin {
 }
 
 flutter { source = "../.." }
+
+tasks.named("preBuild") {
+    doFirst {
+        check(file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java").isFile) {
+            "Missing Flutter plugin registrant. Run flutter pub get successfully before building Android. " +
+                "On Windows without desktop symlink support, set FLUTTER_WINDOWS=false for this Android build."
+        }
+    }
+}
 
 tasks.withType<JavaCompile>().configureEach {
     if (name.contains("Release")) {

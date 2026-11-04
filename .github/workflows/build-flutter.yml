@@ -456,7 +456,7 @@ jobs:
           base_url="https://github.com/${repo}/releases/download/${tag}"
           
           {
-            printf '%s\n\n' "## 糖葫芦Haw (THLRedLook) v${base_version} 正式发布"
+            printf '%s\n\n' "## 糖葫芦 (THLRedLook) v${base_version} 正式发布"
             printf '> 🕒 **最近滚动更新**：%s (北京时间) · **最新构建号**：`Build %s` · **Git 提交**：`%s`\n' "$bj_time" "$latest_build" "${{ github.sha }}"
             printf '> 💡 *本项目采用持续集成，每次提交均自动构建各端安装包并更新发布。若页面缓存显示较早时间，请以本说明和安装包构建号为准。*\n\n'
             printf '%s\n\n' "全平台独立运行的短剧与流媒体聚合播放器，内置官方标准规范的数据源，支持端侧独立解析与在线播放。无需注册登录，开箱即用。"
@@ -521,11 +521,11 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "更新已有 Release: $tag"
             gh release upload "$tag" release/* --clobber
-            gh release edit "$tag" --title "糖葫芦Haw v${base_version} (Build ${latest_build})" --notes-file notes.md --target "${{ github.sha }}"
+            gh release edit "$tag" --title "糖葫芦 v${base_version} (Build ${latest_build})" --notes-file notes.md --target "${{ github.sha }}"
           else
             echo "创建新 Release: $tag (Target: ${{ github.sha }})"
             gh release create "$tag" release/* \
-              --title "糖葫芦Haw v${base_version} (Build ${latest_build})" \
+              --title "糖葫芦 v${base_version} (Build ${latest_build})" \
               --notes-file notes.md \
               --target "${{ github.sha }}"
           fi

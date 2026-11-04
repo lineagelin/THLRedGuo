@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:THLRedLook/utils/build/app_build.dart';
-import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 
 /// 首页顶部导航栏组件
@@ -35,6 +33,8 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
     required this.onRefreshCatalog,
     required this.onMoreAction,
     this.onOpenSourceSwitcher,
+    this.onFeedRefresh,
+    this.onFeedMenu,
   });
 
   final bool selectionMode;
@@ -65,6 +65,8 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onRefreshCatalog;
   final ValueChanged<String> onMoreAction;
   final VoidCallback? onOpenSourceSwitcher;
+  final VoidCallback? onFeedRefresh;
+  final VoidCallback? onFeedMenu;
 
   @override
   Size get preferredSize => Size.fromHeight(television ? 64.0 : kToolbarHeight);
@@ -72,51 +74,22 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
+      backgroundColor: tab == 4 ? Colors.transparent : null,
+      foregroundColor: tab == 4 ? Colors.white : null,
+      surfaceTintColor: tab == 4 ? Colors.transparent : null,
+      forceMaterialTransparency: tab == 4,
+      elevation: tab == 4 ? 0 : null,
+      scrolledUnderElevation: tab == 4 ? 0 : null,
       toolbarHeight: television ? 64 : null,
       titleSpacing: 12,
       title: selectionMode
           ? const Text('选择短剧', maxLines: 1, overflow: TextOverflow.ellipsis)
-          : tab == 0
-          ? InkWell(
-              key: const ValueKey('source-switch'),
-              borderRadius: BorderRadius.circular(12),
-              onTap: onOpenSourceSwitcher,
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: (screenWidth - 240).clamp(100.0, 200.0),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppColors.darkSurfaceHighest70
-                      : AppColors.greyLight,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.movie_filter_rounded, size: 18, color: AppColors.hongguoRed),
-                      const SizedBox(width: 6),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 120),
-                        child: Text(
-                          group.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.expand_more_rounded, size: 18),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          : const Text(appName),
+          : Text(switch (tab) {
+              4 => '推荐',
+              5 => '我的',
+              _ => '发现',
+            }),
+      centerTitle: false,
       actions: [
         if (selectionMode) ...[
           TextButton(
@@ -130,20 +103,43 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
             child: const Text('取消'),
           ),
         ] else ...[
+          if (tab == 5)
+            IconButton(
+              key: const ValueKey('my-settings'),
+              tooltip: '设置',
+              onPressed: () => onMoreAction('settings'),
+              icon: const Icon(Icons.settings_outlined),
+            ),
+          if (tab == 4) ...[
+            IconButton(
+              key: const ValueKey('feed-refresh'),
+              tooltip: '刷新推荐',
+              onPressed: onFeedRefresh,
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              key: const ValueKey('feed-search'),
+              tooltip: '搜索',
+              onPressed: onToggleSearch,
+              icon: const Icon(Icons.search_rounded),
+            ),
+
+            IconButton(
+              key: const ValueKey('feed-player-menu'),
+              tooltip: '播放菜单',
+              onPressed: onFeedMenu,
+              icon: const Icon(Icons.more_vert_rounded),
+            ),
+          ],
           if (tab == 0) ...[
             if (!showRecommendations && screenWidth >= 850)
               IconButton(
                 tooltip: '排序与筛选 · $catalogSortLabel',
                 onPressed: onChooseCatalogView,
-                color: isSortedOrFiltered ? Theme.of(context).colorScheme.primary : null,
+                color: isSortedOrFiltered
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
                 icon: const Icon(Icons.sort_rounded),
-              ),
-            if (sourceGroups.length > 1 && screenWidth >= 900)
-              IconButton(
-                key: const ValueKey('open-source-switcher'),
-                tooltip: '切换数据源',
-                icon: const Icon(Icons.swap_horiz_rounded),
-                onPressed: onOpenSourceSwitcher,
               ),
             IconButton(
               key: const ValueKey('open-rankings'),
@@ -151,7 +147,10 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
               onPressed: sourcesEmpty ? null : onOpenRankings,
               icon: const Icon(Icons.leaderboard_outlined),
             ),
-            if (!showRecommendations && canDownload && supportsDownloads && screenWidth >= 850)
+            if (!showRecommendations &&
+                canDownload &&
+                supportsDownloads &&
+                screenWidth >= 850)
               IconButton(
                 key: const ValueKey('select-catalog-dramas'),
                 tooltip: '多选下载',
@@ -167,12 +166,6 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
               onPressed: onToggleSearch,
             ),
           ],
-          IconButton(
-            key: const ValueKey('home-appbar-settings-button'),
-            tooltip: '设置',
-            icon: const Icon(Icons.settings_rounded),
-            onPressed: () => onMoreAction('settings'),
-          ),
         ],
       ],
     );

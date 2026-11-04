@@ -98,6 +98,18 @@ class AppDevice {
     }
   }
 
+  static Future<bool> showToast(String message) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    try {
+      await channel.invokeMethod<void>('showToast', {'message': message});
+      return true;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   static Future<double> getBrightness() async {
     if (defaultTargetPlatform != TargetPlatform.android) return 0.5;
     try {
@@ -111,7 +123,9 @@ class AppDevice {
   static Future<void> setBrightness(double brightness) async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
-      await channel.invokeMethod('setBrightness', {'brightness': brightness.clamp(0.01, 1.0)});
+      await channel.invokeMethod('setBrightness', {
+        'brightness': brightness.clamp(0.01, 1.0),
+      });
     } catch (_) {}
   }
 
@@ -138,6 +152,10 @@ class AppLayout extends InheritedWidget {
   static bool isTelevision(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.television ??
       false;
+  static bool isMobile(BuildContext context) =>
+      !isTelevision(context) &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
   static bool isPad(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.pad ??
       AppDevice.isPadDevice;

@@ -51,5 +51,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/video_enhancement/
+    - assets/douyin_emoji/
     - assets/branding/
     - assets/sources/

@@ -1,3 +1,4 @@
+import 'package:THLRedLook/views/player/player_clean_screen_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
 
@@ -22,8 +23,13 @@ class FeedPlayerOverlay extends StatelessWidget {
     required this.onDetail,
     required this.onDanmaku,
     required this.onSettings,
+    this.cleanScreen = false,
+    this.transitioning = false,
+    this.onCleanScreen,
   });
 
+  final bool cleanScreen, transitioning;
+  final VoidCallback? onCleanScreen;
   final String title;
   final String episodeText;
   final String description;
@@ -65,15 +71,12 @@ class FeedPlayerOverlay extends StatelessWidget {
           following ? '已追剧' : '加入追剧',
           onFavorite,
         ),
-        _action('episodes', Icons.video_library_outlined, '选集', onEpisodes),
         _action(
           'danmaku',
           danmakuEnabled ? Icons.subtitles : Icons.subtitles_off,
           danmakuEnabled ? '关闭弹幕' : '开启弹幕',
           onDanmaku,
         ),
-        _action('detail', Icons.info_outline, '剧集详情', onDetail),
-        _action('settings', Icons.tune, '播放设置', onSettings),
       ];
       final progress = duration.inMilliseconds > 0
           ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
@@ -96,116 +99,155 @@ class FeedPlayerOverlay extends StatelessWidget {
             ),
           ),
           // 底部暗色渐变（仅作视觉层次，不拦截任何触控事件）
-          const Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 260,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0xD9000000)],
+          if (!cleanScreen)
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 260,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0xD9000000)],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 40, 16, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              key: const ValueKey('feed-title'),
-                              maxLines: compact ? 1 : 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              key: const ValueKey('feed-current-episode'),
-                              onPressed: onEpisodes,
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                padding: EdgeInsets.zero,
-                                alignment: Alignment.centerLeft,
-                              ),
-                              icon: const Icon(
-                                Icons.play_circle_outline,
-                                size: 18,
-                              ),
-                              label: Text(
-                                episodeText,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (!compact && description.isNotEmpty)
-                              Text(
-                                description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  height: 1.45,
+          if (!cleanScreen || (!playing && !transitioning))
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 40, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!cleanScreen)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(
+                                  key: const ValueKey('feed-open-detail'),
+                                  onTap: onDetail,
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          title,
+                                          key: const ValueKey('feed-title'),
+                                          maxLines: compact ? 1 : 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Colors.white,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 8),
+                                if (!compact && description.isNotEmpty)
+                                  Text(
+                                    description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      height: 1.45,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (!compact) ...[
+                            const SizedBox(width: 12),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (final action in actions)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: action,
+                                  ),
+                              ],
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      if (!compact) ...[
-                        const SizedBox(width: 12),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final action in actions)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: action,
+                    if (!cleanScreen && compact)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: actions,
+                      ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.tonal(
+                            key: const ValueKey('feed-current-episode'),
+                            onPressed: onEpisodes,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xCC303036),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                          ],
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '选集 · $episodeText',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(Icons.expand_less_rounded),
+                              ],
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          key: const ValueKey('feed-exit-clean-screen'),
+                          tooltip: cleanScreen ? '退出清屏' : '清屏播放',
+                          style: IconButton.styleFrom(
+                            foregroundColor: AppColors.white,
+                          ),
+                          onPressed: onCleanScreen,
+                          icon: PlayerCleanScreenIcon(active: cleanScreen),
                         ),
                       ],
-                    ],
-                  ),
-                  if (compact)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: actions,
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _FeedProgress(
-              key: const ValueKey('feed-progress'),
-              value: progress,
-              onSeek: enabled && duration > Duration.zero ? onSeek : null,
+          if (!cleanScreen)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 0,
+              child: _FeedProgress(
+                key: const ValueKey('feed-progress'),
+                value: progress,
+                onSeek: enabled && duration > Duration.zero ? onSeek : null,
+              ),
             ),
-          ),
         ],
       );
     },
@@ -260,8 +302,9 @@ class _FeedProgressState extends State<_FeedProgress> {
                 ? (d) => _updateSeek(d.localPosition.dx, width)
                 : null,
             onTapUp: isInteractive ? (_) => _finishSeek() : null,
-            onTapCancel:
-                isInteractive ? () => setState(() => _dragging = null) : null,
+            onTapCancel: isInteractive
+                ? () => setState(() => _dragging = null)
+                : null,
             onHorizontalDragStart: isInteractive
                 ? (d) => _updateSeek(d.localPosition.dx, width)
                 : null,
@@ -269,8 +312,9 @@ class _FeedProgressState extends State<_FeedProgress> {
                 ? (d) => _updateSeek(d.localPosition.dx, width)
                 : null,
             onHorizontalDragEnd: isInteractive ? (_) => _finishSeek() : null,
-            onHorizontalDragCancel:
-                isInteractive ? () => setState(() => _dragging = null) : null,
+            onHorizontalDragCancel: isInteractive
+                ? () => setState(() => _dragging = null)
+                : null,
             child: SizedBox(
               height: 20,
               width: width,
@@ -305,8 +349,7 @@ class _FeedProgressState extends State<_FeedProgress> {
                             boxShadow: isDragging
                                 ? [
                                     BoxShadow(
-                                      color:
-                                          AppColors.hongguoRedWithAlpha(0.6),
+                                      color: AppColors.hongguoRedWithAlpha(0.6),
                                       blurRadius: 6,
                                       spreadRadius: 1,
                                     ),

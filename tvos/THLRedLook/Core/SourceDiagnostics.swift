@@ -642,7 +642,7 @@ public final class SourceDiagnostics: ObservableObject {
     public var report: String {
         var lines: [String] = []
         lines.append("==================================================")
-        lines.append("        糖葫芦Haw (THLRedLook) 核心技术诊断报告      ")
+        lines.append("        糖葫芦 (THLRedLook) 核心技术诊断报告      ")
         lines.append("==================================================")
         lines.append("【基础环境】")
         lines.append("· 应用版本: \(Self.version)")

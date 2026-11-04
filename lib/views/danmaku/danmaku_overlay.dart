@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:THLRedLook/views/danmaku/douyin_emoji_text.dart';
 
 import 'package:flutter/material.dart';
 
@@ -33,19 +34,35 @@ List<DanmakuFlight> planDanmaku(
   required double width,
   required int rows,
   required double Function(String) measure,
+  double speedScale = 1.0,
+  int mergeSeconds = 5,
+  Iterable<String> blockedWords = const [],
 }) {
   if (!width.isFinite || width <= 0 || rows < 1) return const [];
   final laneCount = rows.clamp(1, 8);
   final lanes = List<DanmakuFlight?>.filled(laneCount, null);
   final sorted = items.toList()..sort((a, b) => a.timeMs.compareTo(b.timeMs));
   final seen = <String>{};
+  final lastDisplayed = <String, int>{};
+  final mergeMs = mergeSeconds.clamp(2, 10) * 1000;
   final flights = <DanmakuFlight>[];
+  final speed = speedScale.isFinite ? speedScale.clamp(0.6, 1.5) : 1.0;
+  final filters = blockedWords
+      .map((word) => word.trim().toLowerCase())
+      .where((word) => word.isNotEmpty)
+      .toList();
 
   for (final item in sorted) {
     if (item.id.isEmpty ||
         item.text.trim().isEmpty ||
         item.timeMs < 0 ||
-        !seen.add(item.id)) {
+        !seen.add(item.id) ||
+        filters.any((word) => item.text.toLowerCase().contains(word))) {
+      continue;
+    }
+    final content = item.text.trim();
+    final previousTime = lastDisplayed[content];
+    if (previousTime != null && item.timeMs - previousTime <= mergeMs) {
       continue;
     }
     if (flights.reversed
@@ -60,7 +77,7 @@ List<DanmakuFlight> planDanmaku(
     final text =
         String.fromCharCodes(runes.take(100)) + (runes.length > 100 ? '…' : '');
     final size = measure(text).ceilToDouble() + 8;
-    final durationMs = calculateDanmakuLifetimeMs(item);
+    final durationMs = (calculateDanmakuLifetimeMs(item) / speed).round();
 
     int bestLane = -1;
     double maxSafetyMargin = -1;
@@ -106,6 +123,7 @@ List<DanmakuFlight> planDanmaku(
     final flight = DanmakuFlight(item, text, bestLane, size, durationMs);
     lanes[bestLane] = flight;
     flights.add(flight);
+    lastDisplayed[content] = item.timeMs;
   }
   return flights;
 }
@@ -140,35 +158,29 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
               constraints.maxHeight <= 0) {
             return const SizedBox.shrink();
           }
-          final aspect = widget.aspectRatio.isFinite && widget.aspectRatio > 0
-              ? widget.aspectRatio
-              : 16 / 9;
-          final width = math.min(
-            constraints.maxWidth,
-            constraints.maxHeight * aspect,
-          );
-          final height = math.min(
-            constraints.maxHeight,
-            constraints.maxWidth / aspect,
-          );
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
           final baseFontSize = width < 600 ? 16.0 : 20.0;
           final fontSize = baseFontSize * widget.style.fontSizeScale;
           final scaler = MediaQuery.textScalerOf(context);
           final rowHeight = scaler.scale(fontSize) * 1.5;
-          final rows = ((height * widget.style.displayArea - 8) / rowHeight).floor().clamp(0, 10);
+          final availableRows = ((height - 8) / rowHeight).floor().clamp(0, 4);
+          final rows = math.min(widget.style.rows.clamp(1, 4), availableRows);
           final opacity = widget.style.opacity.clamp(0.1, 1.0);
           final style = TextStyle(
             fontSize: fontSize,
             fontWeight: FontWeight.w600,
             color: AppColors.white.withValues(alpha: opacity),
             height: 1.2,
-            shadows: [
-              Shadow(
-                color: AppColors.black.withValues(alpha: opacity * 0.85),
-                blurRadius: 3,
-                offset: const Offset(1, 1),
-              ),
-            ],
+            shadows: widget.style.shadowEnabled
+                ? [
+                    Shadow(
+                      color: AppColors.black.withValues(alpha: opacity * 0.85),
+                      blurRadius: 3,
+                      offset: const Offset(1, 1),
+                    ),
+                  ]
+                : null,
           );
           return Center(
             child: SizedBox(
@@ -189,9 +201,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
                       rows,
                       fontSize,
                       scaler,
-                      widget.style.fontSizeScale,
-                      widget.style.opacity,
-                      widget.style.displayArea,
+                      widget.style,
                     );
                     if (_layout != layout) {
                       _layout = layout;
@@ -199,17 +209,13 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
                         controller.items,
                         width: width,
                         rows: rows,
-                        measure: (text) {
-                          final painter = TextPainter(
-                            text: TextSpan(text: text, style: style),
-                            textDirection: TextDirection.ltr,
-                            textScaler: scaler,
-                            maxLines: 1,
-                          )..layout();
-                          final measured = painter.width;
-                          painter.dispose();
-                          return measured;
-                        },
+                        speedScale: widget.style.speedScale,
+                        mergeSeconds: widget.style.mergeSeconds,
+                        blockedWords: widget.style.blockedWordsEnabled
+                            ? widget.style.blockedWords
+                            : const [],
+                        measure: (text) =>
+                            measureDanmakuEmojiText(text, style, scaler),
                       );
                     }
                     return Stack(
@@ -331,13 +337,10 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _motion,
     child: RepaintBoundary(
-      child: Text(
-        widget.flight.text,
+      child: DouyinEmojiText(
+        text: widget.flight.text,
         style: widget.style,
-        textScaler: widget.scaler,
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        softWrap: false,
+        scaler: widget.scaler,
       ),
     ),
     builder: (context, child) => Transform.translate(

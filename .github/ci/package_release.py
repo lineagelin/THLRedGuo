@@ -7,6 +7,7 @@ import zipfile
 from pathlib import Path
 
 from app_build import BuildVariant, add_variant_argument
+from android_apk_checks import verify_plugin_registrant
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
@@ -29,6 +30,7 @@ if options.platform == 'android':
         if not source.is_file():
             raise SystemExit('缺少 APK：' + str(source))
         with zipfile.ZipFile(source) as archive:
+            verify_plugin_registrant(archive)
             names = set(archive.namelist())
             required = [f'lib/{abi}/{library}' for library in
                         ['libflutter.so', 'libapp.so', 'libmpv.so', 'libffmpegkit.so']]

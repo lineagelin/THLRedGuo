@@ -70,7 +70,7 @@ public struct AboutCompactInfoCard: View {
 
                 // 版本号与编译号
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("糖葫芦Haw")
+                    Text("糖葫芦")
                         .font(.system(size: 38, weight: .heavy))
                         .foregroundColor(.white)
 

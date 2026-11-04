@@ -10,8 +10,8 @@ import 'package:THLRedLook/core/download/download_collections.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/pages/player/player_page.dart';
+import 'package:THLRedLook/pages/settings/storage_page.dart' show storageSize;
 import 'package:THLRedLook/views/remote/remote_widgets.dart';
-import 'package:THLRedLook/pages/settings/settings_page.dart';
 import 'package:THLRedLook/views/common/widgets.dart';
 
 class DownloadsScreen extends StatefulWidget {
@@ -20,11 +20,13 @@ class DownloadsScreen extends StatefulWidget {
     required this.repository,
     required this.store,
     this.embedded = false,
+    this.allSources = false,
     this.playerBuilder,
   });
   final AppRepository repository;
   final LocalStore store;
   final bool embedded;
+  final bool allSources;
   @visibleForTesting
   final Widget Function(DramaDetail, int, double)? playerBuilder;
   @override
@@ -51,12 +53,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       widget.store.profileEpoch == _epoch && widget.store.canDownload;
   List<DownloadCollection> get _collections {
     final currentSource = widget.store.source;
-    final filtered = currentSource.isEmpty
+    final filtered = widget.allSources || currentSource.isEmpty
         ? _jobs
         : _jobs.where((job) {
             final jobSource = job.drama.source.isNotEmpty
                 ? job.drama.source
-                : (job.drama.id.contains(':') ? job.drama.id.split(':').first : '');
+                : (job.drama.id.contains(':')
+                      ? job.drama.id.split(':').first
+                      : '');
             return jobSource == currentSource;
           }).toList();
     return downloadCollections(
@@ -559,7 +563,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         : Icons.downloading_rounded,
                   ),
             title: Text(
-              '第 ${job.episode.number} 集${job.episode.vip ? ' · VIP' : ''}',
+              '第 ${job.episode.number} 集${job.episode.vip && !AppLayout.isMobile(context) ? ' · VIP' : ''}',
             ),
             subtitle: Text(
               '${job.archived ? '已保留视频' : job.stateLabel} · ${storageSize(job.bytes)}'
@@ -589,14 +593,18 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           key: ValueKey('pause-${job.id}'),
                           tooltip: '暂停',
                           icon: const Icon(Icons.pause_circle_outline_rounded),
-                          onPressed: _busy ? null : () => _batch('pause', [job]),
+                          onPressed: _busy
+                              ? null
+                              : () => _batch('pause', [job]),
                         ),
                       if (job.resumable)
                         IconButton(
                           key: ValueKey('resume-${job.id}'),
                           tooltip: '继续 / 重试',
                           icon: const Icon(Icons.play_circle_outline_rounded),
-                          onPressed: _busy ? null : () => _batch('resume', [job]),
+                          onPressed: _busy
+                              ? null
+                              : () => _batch('resume', [job]),
                         ),
                       IconButton(
                         key: ValueKey('remove-${job.id}'),
@@ -616,9 +624,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         },
                         itemBuilder: (_) => [
                           if (job.completed)
-                            const PopupMenuItem(value: 'play', child: Text('本地播放')),
+                            const PopupMenuItem(
+                              value: 'play',
+                              child: Text('本地播放'),
+                            ),
                           if (job.active)
-                            const PopupMenuItem(value: 'pause', child: Text('暂停')),
+                            const PopupMenuItem(
+                              value: 'pause',
+                              child: Text('暂停'),
+                            ),
                           if (job.resumable)
                             const PopupMenuItem(
                               value: 'resume',

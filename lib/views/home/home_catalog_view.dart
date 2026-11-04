@@ -151,7 +151,7 @@ class HomeCatalogView extends StatelessWidget {
             : LayoutBuilder(
                 builder: (context, constraints) {
                   if (television) {
-                    final columns = ((constraints.maxWidth - 36) / 150)
+                    final columns = ((constraints.maxWidth - 36) / 164)
                         .floor()
                         .clamp(1, 8);
                     final tileWidth =
@@ -189,6 +189,9 @@ class HomeCatalogView extends StatelessWidget {
                             gridDelegate: dramaGridDelegate(
                               context,
                               constraints.maxWidth - 2 * padding,
+                              minimumTileWidth: constraints.maxWidth < 600
+                                  ? 120
+                                  : 196,
                             ),
                             delegate: SliverChildBuilderDelegate(
                               (_, index) => tileBuilder(items[index]),

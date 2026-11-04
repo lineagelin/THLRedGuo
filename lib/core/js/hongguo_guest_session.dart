@@ -3,16 +3,22 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum GuestRecoveryDecision { none, reload, renew }
+
 class HongguoGuestSession {
   static final shared = HongguoGuestSession();
   static const sessionKey = 'thl_hongguo_device_session';
   static const createdKey = 'thl_hongguo_guest_created_at';
+  static const recoveryKey = 'thl_hongguo_guest_recovered_at';
+  static const failedRecoveryBackoff = Duration(seconds: 30);
 
   HongguoGuestSession({DateTime Function()? now}) : now = now ?? DateTime.now;
 
   final DateTime Function() now;
   String? value;
   DateTime? createdAt;
+  DateTime? _recoveredAt;
+  Future<void>? playbackRecovery;
   bool _loaded = false;
   int _generation = 0;
   Future<void>? _loading;
@@ -143,11 +149,77 @@ class HongguoGuestSession {
     });
   }
 
+  /// Compare the failed identity with both memory and disk before renewing it.
+  /// Only the caller holding [playbackRecovery] may call this method.
+  Future<GuestRecoveryDecision> invalidateForPlayback(String expected) async {
+    await preload();
+    return _serialize(() async {
+      final generation = _generation;
+      final prefs = await _preferences();
+      try {
+        await prefs?.reload();
+      } catch (_) {
+        return GuestRecoveryDecision.none;
+      }
+      if (_generation != generation || value != expected) {
+        return valid(value) && value != expected
+            ? GuestRecoveryDecision.reload
+            : GuestRecoveryDecision.none;
+      }
+      final stored = prefs?.getString(sessionKey);
+      if (valid(stored) && stored != expected) {
+        value = stored;
+        createdAt = _date(prefs?.getInt(createdKey));
+        _generation++;
+        return GuestRecoveryDecision.reload;
+      }
+      final time = now();
+      final recovered = _date(prefs?.getInt(recoveryKey)) ?? _recoveredAt;
+      if (recovered != null &&
+          time.difference(recovered) < failedRecoveryBackoff) {
+        return GuestRecoveryDecision.none;
+      }
+      try {
+        await prefs?.setInt(recoveryKey, time.millisecondsSinceEpoch);
+        await prefs?.setString(sessionKey, '');
+        await prefs?.setInt(createdKey, 0);
+      } catch (_) {
+        return GuestRecoveryDecision.none;
+      }
+      if (_generation != generation) {
+        return valid(value) && value != expected
+            ? GuestRecoveryDecision.reload
+            : GuestRecoveryDecision.none;
+      }
+      value = null;
+      createdAt = null;
+      _recoveredAt = time;
+      _generation++;
+      return GuestRecoveryDecision.renew;
+    });
+  }
+
+  /// A verified playback address releases the recovery slot immediately. A
+  /// later episode may reject even a recently created guest identity.
+  Future<void> playbackSucceeded(String? expected) async {
+    if (!valid(expected) || value != expected) return;
+    await _serialize(() async {
+      final prefs = await _preferences();
+      if (value != expected) return;
+      if (prefs?.getInt(recoveryKey) != null) {
+        await prefs?.remove(recoveryKey);
+      }
+      _recoveredAt = null;
+    });
+  }
+
   Future<void> get pendingWrites => _writes;
 
   void resetForTesting([String? session, DateTime? created]) {
     value = valid(session) ? session : null;
     createdAt = created;
+    _recoveredAt = null;
+    playbackRecovery = null;
     _loaded = true;
     _loading = null;
     _generation++;
