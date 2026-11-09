@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:THLRedLook/utils/theme/app_colors.dart';
 import 'package:THLRedLook/core/danmaku/danmaku_controller.dart';
+import 'package:THLRedLook/core/danmaku/danmaku_refresh_rate.dart';
 import 'package:THLRedLook/models/danmaku/danmaku_models.dart';
 
 class DanmakuFlight {
@@ -143,113 +144,180 @@ class DanmakuOverlay extends StatefulWidget {
   State<DanmakuOverlay> createState() => _DanmakuOverlayState();
 }
 
-class _DanmakuOverlayState extends State<DanmakuOverlay> {
+class _DanmakuOverlayState extends State<DanmakuOverlay>
+    with WidgetsBindingObserver {
   Object? _layout;
+  Object? _measurementLayout;
+  final _measurements = <String, double>{};
   List<DanmakuFlight> _schedule = const [];
+  final _refreshRate = DanmakuRefreshRate();
+  bool _resumed = true;
 
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: ExcludeSemantics(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (!constraints.hasBoundedWidth ||
-              !constraints.hasBoundedHeight ||
-              constraints.maxWidth <= 0 ||
-              constraints.maxHeight <= 0) {
-            return const SizedBox.shrink();
-          }
-          final width = constraints.maxWidth;
-          final height = constraints.maxHeight;
-          final baseFontSize = width < 600 ? 16.0 : 20.0;
-          final fontSize = baseFontSize * widget.style.fontSizeScale;
-          final scaler = MediaQuery.textScalerOf(context);
-          final rowHeight = scaler.scale(fontSize) * 1.5;
-          final availableRows = ((height - 8) / rowHeight).floor().clamp(0, 4);
-          final rows = math.min(widget.style.rows.clamp(1, 4), availableRows);
-          final opacity = widget.style.opacity.clamp(0.1, 1.0);
-          final style = TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.w600,
-            color: AppColors.white.withValues(alpha: opacity),
-            height: 1.2,
-            shadows: widget.style.shadowEnabled
-                ? [
-                    Shadow(
-                      color: AppColors.black.withValues(alpha: opacity * 0.85),
-                      blurRadius: 3,
-                      offset: const Offset(1, 1),
-                    ),
-                  ]
-                : null,
-          );
-          return Center(
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: ClipRect(
-                child: AnimatedBuilder(
-                  animation: widget.controller,
-                  builder: (context, _) {
-                    final controller = widget.controller;
-                    if (!controller.visible || rows == 0) {
-                      return const SizedBox.shrink();
-                    }
-                    final layout = (
-                      controller,
-                      controller.dataRevision,
-                      width,
-                      rows,
-                      fontSize,
-                      scaler,
-                      widget.style,
-                    );
-                    if (_layout != layout) {
-                      _layout = layout;
-                      _schedule = planDanmaku(
-                        controller.items,
-                        width: width,
-                        rows: rows,
-                        speedScale: widget.style.speedScale,
-                        mergeSeconds: widget.style.mergeSeconds,
-                        blockedWords: widget.style.blockedWordsEnabled
-                            ? widget.style.blockedWords
-                            : const [],
-                        measure: (text) =>
-                            measureDanmakuEmojiText(text, style, scaler),
+  void initState() {
+    super.initState();
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
+    widget.controller.addListener(_syncRefreshRate);
+    _syncRefreshRate();
+  }
+
+  @override
+  void didUpdateWidget(DanmakuOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncRefreshRate);
+      widget.controller.addListener(_syncRefreshRate);
+    }
+    _syncRefreshRate();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    _syncRefreshRate();
+  }
+
+  void _syncRefreshRate() => _refreshRate.setEnabled(
+    _resumed && widget.style.highRefreshRate && widget.controller.moving,
+  );
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_syncRefreshRate);
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshRate.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RepaintBoundary(
+    child: IgnorePointer(
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (!constraints.hasBoundedWidth ||
+                !constraints.hasBoundedHeight ||
+                constraints.maxWidth <= 0 ||
+                constraints.maxHeight <= 0) {
+              return const SizedBox.shrink();
+            }
+            final width = constraints.maxWidth;
+            final height = constraints.maxHeight;
+            final baseFontSize = width < 600 ? 16.0 : 20.0;
+            final fontSize = baseFontSize * widget.style.fontSizeScale;
+            final scaler = MediaQuery.textScalerOf(context);
+            final rowHeight = scaler.scale(fontSize) * 1.5;
+            final availableRows = ((height - 8) / rowHeight).floor().clamp(
+              0,
+              4,
+            );
+            final rows = math.min(widget.style.rows.clamp(1, 4), availableRows);
+            final opacity = widget.style.opacity.clamp(0.1, 1.0);
+            final style = TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+              color: AppColors.white.withValues(alpha: opacity),
+              height: 1.2,
+              shadows: widget.style.shadowEnabled
+                  ? [
+                      Shadow(
+                        color: AppColors.black.withValues(
+                          alpha: opacity * 0.85,
+                        ),
+                        blurRadius: 3,
+                        offset: const Offset(1, 1),
+                      ),
+                    ]
+                  : null,
+            );
+            return Center(
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: ClipRect(
+                  child: AnimatedBuilder(
+                    animation: widget.controller,
+                    builder: (context, _) {
+                      final controller = widget.controller;
+                      final positionMs = controller.motionPositionMs;
+                      if (!controller.visible || rows == 0) {
+                        return const SizedBox.shrink();
+                      }
+                      final layout = (
+                        controller,
+                        controller.dataRevision,
+                        width,
+                        rows,
+                        fontSize,
+                        scaler,
+                        widget.style,
                       );
-                    }
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        for (final flight in _schedule)
-                          if (controller.positionMs >= flight.item.timeMs &&
-                              controller.positionMs <
-                                  flight.item.timeMs + flight.durationMs)
-                            Positioned(
-                              key: ValueKey('danmaku-item-${flight.item.id}'),
-                              left: 0,
-                              top: 8 + flight.lane * rowHeight,
-                              width: flight.width,
-                              height: rowHeight,
-                              child: _DanmakuMotion(
-                                flight: flight,
-                                width: width,
-                                positionMs: controller.positionMs,
-                                moving: controller.moving,
-                                rate: controller.rate,
-                                revision: controller.motionRevision,
-                                style: style,
-                                scaler: scaler,
+                      if (_layout != layout) {
+                        _layout = layout;
+                        final measurementLayout = (style, scaler);
+                        if (_measurementLayout != measurementLayout) {
+                          _measurementLayout = measurementLayout;
+                          _measurements.clear();
+                        }
+                        final measuredTexts = <String>{};
+                        _schedule = planDanmaku(
+                          controller.items,
+                          width: width,
+                          rows: rows,
+                          speedScale: widget.style.speedScale,
+                          mergeSeconds: widget.style.mergeSeconds,
+                          blockedWords: widget.style.blockedWordsEnabled
+                              ? widget.style.blockedWords
+                              : const [],
+                          measure: (text) {
+                            measuredTexts.add(text);
+                            return _measurements.putIfAbsent(
+                              text,
+                              () =>
+                                  measureDanmakuEmojiText(text, style, scaler),
+                            );
+                          },
+                        );
+                        _measurements.removeWhere(
+                          (text, _) => !measuredTexts.contains(text),
+                        );
+                      }
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          for (final flight in _schedule)
+                            if (positionMs >= flight.item.timeMs &&
+                                positionMs <
+                                    flight.item.timeMs + flight.durationMs)
+                              Positioned(
+                                key: ValueKey('danmaku-item-${flight.item.id}'),
+                                left: 0,
+                                top: 8 + flight.lane * rowHeight,
+                                width: flight.width,
+                                height: rowHeight,
+                                child: _DanmakuMotion(
+                                  flight: flight,
+                                  width: width,
+                                  positionMs: positionMs,
+                                  moving: controller.moving,
+                                  rate: controller.rate,
+                                  revision: controller.motionRevision,
+                                  style: style,
+                                  scaler: scaler,
+                                ),
                               ),
-                            ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     ),
   );
@@ -282,6 +350,7 @@ class _DanmakuMotion extends StatefulWidget {
 class _DanmakuMotionState extends State<_DanmakuMotion>
     with SingleTickerProviderStateMixin {
   late final AnimationController _motion = AnimationController(vsync: this);
+  Widget? _label;
 
   @override
   void initState() {
@@ -293,34 +362,36 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
   void didUpdateWidget(_DanmakuMotion oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.revision != widget.revision ||
-        oldWidget.positionMs != widget.positionMs ||
         oldWidget.width != widget.width ||
         oldWidget.flight.width != widget.flight.width ||
         oldWidget.flight.item.timeMs != widget.flight.item.timeMs ||
         oldWidget.flight.durationMs != widget.flight.durationMs) {
       _sync();
+    } else if (oldWidget.moving != widget.moving ||
+        oldWidget.rate != widget.rate) {
+      _sync(preservePosition: true);
     }
-    if (oldWidget.style != widget.style || oldWidget.scaler != widget.scaler) {
-      setState(() {});
+    if (oldWidget.style != widget.style ||
+        oldWidget.scaler != widget.scaler ||
+        oldWidget.flight.text != widget.flight.text) {
+      _label = null;
     }
   }
 
-  void _sync() {
+  void _sync({bool preservePosition = false}) {
     _motion.stop();
     final lifetime = widget.flight.durationMs;
-    final elapsed = (widget.positionMs - widget.flight.item.timeMs).clamp(
-      0,
-      lifetime,
-    );
+    final elapsed = preservePosition
+        ? _motion.value * lifetime
+        : (widget.positionMs - widget.flight.item.timeMs).clamp(0, lifetime);
     _motion.value = elapsed / lifetime;
     if (widget.moving && elapsed < lifetime) {
       _motion.animateTo(
-        (elapsed + 750).clamp(0, lifetime) / lifetime,
+        1,
         duration: Duration(
-          microseconds:
-              ((lifetime - elapsed).clamp(1, 750) * 1000 / widget.rate)
-                  .round()
-                  .clamp(1, 86400000000),
+          microseconds: ((lifetime - elapsed) * 1000 / widget.rate)
+              .round()
+              .clamp(1, 86400000000),
         ),
         curve: Curves.linear,
       );
@@ -336,7 +407,7 @@ class _DanmakuMotionState extends State<_DanmakuMotion>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _motion,
-    child: RepaintBoundary(
+    child: _label ??= RepaintBoundary(
       child: DouyinEmojiText(
         text: widget.flight.text,
         style: widget.style,

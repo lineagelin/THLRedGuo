@@ -21,6 +21,10 @@ import android.net.Uri
 import android.util.Rational
 import android.view.InputDevice
 import android.view.WindowManager
+import android.view.View
+import android.view.ViewGroup
+import android.view.Surface
+import io.flutter.embedding.android.FlutterSurfaceView
 import android.provider.Settings
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -30,6 +34,79 @@ class MainActivity : FlutterActivity() {
     private var thermalHeadroom: Double? = null
     private var deviceChannel: MethodChannel? = null
     private var televisionMode = false
+    private val danmakuRefreshOwners = mutableSetOf<String>()
+    private var resumedForRefreshRate = false
+    private var savedRefreshRate: Float? = null
+    private var savedDisplayModeId: Int? = null
+    private val savedViewFrameRates = mutableMapOf<View, Float>()
+
+    private fun flutterSurface(view: View): FlutterSurfaceView? {
+        if (view is FlutterSurfaceView) return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                flutterSurface(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyDanmakuRefreshRate() {
+        val allowed = resumedForRefreshRate && danmakuRefreshOwners.isNotEmpty() &&
+            !televisionMode && !isTelevisionDevice() &&
+            !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode)
+        val currentDisplay = windowManager.defaultDisplay
+        val currentMode = currentDisplay.mode
+        // Keep the current resolution and cap the request at 120 Hz. Never force
+        // a TV mode switch or change the user's global refresh-rate settings.
+        val highMode = if (allowed) currentDisplay.supportedModes
+            .filter { it.physicalWidth == currentMode.physicalWidth &&
+                it.physicalHeight == currentMode.physicalHeight &&
+                it.refreshRate > 60.5f && it.refreshRate <= 120.5f }
+            .maxByOrNull { it.refreshRate } else null
+        val attributes = window.attributes
+        if (highMode != null) {
+            if (savedRefreshRate == null) {
+                savedRefreshRate = attributes.preferredRefreshRate
+                savedDisplayModeId = attributes.preferredDisplayModeId
+            }
+            attributes.preferredRefreshRate = highMode.refreshRate
+            attributes.preferredDisplayModeId = highMode.modeId
+        } else if (savedRefreshRate != null) {
+            attributes.preferredRefreshRate = savedRefreshRate!!
+            attributes.preferredDisplayModeId = savedDisplayModeId ?: 0
+            savedRefreshRate = null
+            savedDisplayModeId = null
+        } else {
+            return
+        }
+        window.attributes = attributes
+        val renderView = flutterSurface(window.decorView)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            if (highMode != null) {
+                for (view in listOfNotNull(window.decorView, renderView)) {
+                    savedViewFrameRates.putIfAbsent(view, view.requestedFrameRate)
+                    view.requestedFrameRate = highMode.refreshRate
+                    view.invalidate()
+                }
+            } else {
+                for ((view, frameRate) in savedViewFrameRates) {
+                    view.requestedFrameRate = frameRate
+                    view.invalidate()
+                }
+                savedViewFrameRates.clear()
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val surface = renderView?.holder?.surface
+            if (surface?.isValid == true) {
+                runCatching {
+                    surface.setFrameRate(highMode?.refreshRate ?: 0f,
+                        Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+                }
+            }
+        }
+    }
 
     @Suppress("DEPRECATION")
     private fun isTelevisionDevice(): Boolean {
@@ -123,6 +200,14 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        resumedForRefreshRate = true
+        applyDanmakuRefreshRate()
+    }
+
+    override fun onPause() {
+        resumedForRefreshRate = false
+        applyDanmakuRefreshRate()
+        super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -151,11 +236,24 @@ class MainActivity : FlutterActivity() {
                             } else {
                                 val changed = televisionMode != enabled
                                 televisionMode = enabled
+                                applyDanmakuRefreshRate()
                                 if (enabled || changed) {
                                     requestedOrientation = if (enabled) {
                                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                     } else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                 }
+                                result.success(null)
+                            }
+                        }
+                        "setDanmakuHighRefreshRate" -> {
+                            val owner = call.argument<String>("owner")
+                            val enabled = call.argument<Boolean>("enabled")
+                            if (owner.isNullOrEmpty() || owner.length > 80 || enabled == null) {
+                                result.error("invalid_refresh_rate_request", "无效的刷新率请求", null)
+                            } else {
+                                if (enabled) danmakuRefreshOwners.add(owner)
+                                else danmakuRefreshOwners.remove(owner)
+                                applyDanmakuRefreshRate()
                                 result.success(null)
                             }
                         }
@@ -299,6 +397,7 @@ class MainActivity : FlutterActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        applyDanmakuRefreshRate()
         deviceChannel?.invokeMethod(
             "pictureInPictureChanged",
             mapOf("active" to isInPictureInPictureMode)
@@ -306,6 +405,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        danmakuRefreshOwners.clear()
+        applyDanmakuRefreshRate()
         deviceChannel?.setMethodCallHandler(null)
         deviceChannel = null
         super.cleanUpFlutterEngine(flutterEngine)

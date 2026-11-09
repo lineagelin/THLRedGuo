@@ -128,6 +128,15 @@ void main() {
     expect(style.rows, 3);
     expect(style.mergeSeconds, 5);
     expect(style.shadowEnabled, isTrue);
+    expect(style.highRefreshRate, isTrue);
+    expect(
+      DanmakuStyle.fromJson({'highRefreshRate': false}).highRefreshRate,
+      isFalse,
+    );
+    expect(
+      DanmakuStyle.fromJson({'highRefreshRate': 'invalid'}).highRefreshRate,
+      isTrue,
+    );
     expect(DanmakuStyle.fromJson({'mergeSeconds': -1}).mergeSeconds, 2);
     expect(DanmakuStyle.fromJson({'mergeSeconds': 99}).mergeSeconds, 10);
     expect(DanmakuStyle.fromJson({'mergeSeconds': double.nan}).mergeSeconds, 5);
@@ -145,6 +154,7 @@ void main() {
         rows: 4,
         mergeSeconds: 8,
         shadowEnabled: false,
+        highRefreshRate: false,
         blockedWordsEnabled: false,
         blockedWords: ['6', '剧透'],
       ),
@@ -345,6 +355,25 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('danmaku-reset')));
     await tester.pumpAndSettle();
     expect(saved!.shadowEnabled, isTrue);
+  });
+
+  testWidgets('high refresh toggle persists and reset enables it again', (
+    tester,
+  ) async {
+    _screen(tester);
+    DanmakuStyle? saved;
+    await _openSettings(tester, save: (value) async => saved = value);
+    final toggle = find.byKey(
+      const ValueKey('danmaku-high-refresh-rate-switch'),
+    );
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(saved!.highRefreshRate, isFalse);
+    expect(DanmakuStyle.fromJson(saved!.toJson()).highRefreshRate, isFalse);
+    await tester.tap(find.byKey(const ValueKey('danmaku-reset')));
+    await tester.pumpAndSettle();
+    expect(saved!.highRefreshRate, isTrue);
   });
 
   testWidgets('reset restores sliders and preserves blocked words', (

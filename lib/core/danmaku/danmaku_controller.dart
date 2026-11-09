@@ -50,6 +50,18 @@ class DanmakuController extends ChangeNotifier {
       durationMs > 0 &&
       positionMs < durationMs;
   bool get moving => visible && _playing && !_buffering;
+  // Keep normal progress reports from resetting the animation clock. They are
+  // used to detect a discontinuity; new flights join the same continuous clock.
+  int get motionPositionMs {
+    if (_anchorTime == null) return positionMs;
+    if (!_anchorMoving) return _anchorPosition.clamp(0, durationMs);
+    final elapsed = _now().difference(_anchorTime!).inMicroseconds / 1000;
+    return (_anchorPosition +
+            elapsed.clamp(0, danmakuMaxDurationMs) * _anchorRate)
+        .round()
+        .clamp(0, durationMs);
+  }
+
   bool get loading => _pendingStart != null;
   bool get canRetry => visible && _failures.isNotEmpty;
   String get status {
@@ -100,6 +112,7 @@ class DanmakuController extends ChangeNotifier {
   }) {
     if (_closed) return;
     final wasVisible = visible, wasMoving = moving;
+    final continuousPosition = motionPositionMs;
     final previousRate = rate;
     final nextPosition = position.inMilliseconds.clamp(0, danmakuMaxDurationMs);
     final nextDuration = duration.inMilliseconds;
@@ -116,7 +129,7 @@ class DanmakuController extends ChangeNotifier {
     final jumped =
         !_seeking &&
         (discontinuity ||
-            nextPosition < positionMs ||
+            nextPosition < positionMs - 600 ||
             nextPosition - positionMs > 2000);
     if (durationChanged) {
       _cancel();
@@ -136,13 +149,12 @@ class DanmakuController extends ChangeNotifier {
     _foreground = foreground;
     _available = available;
     if (wasVisible && !visible) _cancel();
-    if (drift ||
-        jumped ||
-        durationChanged ||
-        wasVisible != visible ||
-        wasMoving != moving ||
-        previousRate != rate) {
+    if (drift || jumped || durationChanged || wasVisible != visible) {
       _resetMotion();
+    } else if (wasMoving != moving || previousRate != rate) {
+      // A pause/buffer/rate transition changes the clock's velocity, not its
+      // position. Native position samples can lag behind the displayed frame.
+      _resetMotion(position: continuousPosition, discontinuity: false);
     }
     notifyListeners();
     _ensureWindow();
@@ -172,10 +184,10 @@ class DanmakuController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _resetMotion() {
-    motionRevision++;
+  void _resetMotion({int? position, bool discontinuity = true}) {
+    if (discontinuity) motionRevision++;
     _anchorTime = _now();
-    _anchorPosition = positionMs;
+    _anchorPosition = position ?? positionMs;
     _anchorRate = rate;
     _anchorMoving = moving;
   }

@@ -122,6 +122,7 @@ class DanmakuStyle {
     this.rows = 3,
     this.mergeSeconds = 5,
     this.shadowEnabled = true,
+    this.highRefreshRate = true,
     this.blockedWordsEnabled = true,
     this.blockedWords = const [],
   });
@@ -133,6 +134,7 @@ class DanmakuStyle {
   final int rows;
   final int mergeSeconds;
   final bool shadowEnabled;
+  final bool highRefreshRate;
   final bool blockedWordsEnabled;
   final List<String> blockedWords;
 
@@ -149,6 +151,7 @@ class DanmakuStyle {
     int? rows,
     int? mergeSeconds,
     bool? shadowEnabled,
+    bool? highRefreshRate,
     bool? blockedWordsEnabled,
     List<String>? blockedWords,
   }) => DanmakuStyle(
@@ -159,6 +162,7 @@ class DanmakuStyle {
     rows: rows ?? this.rows,
     mergeSeconds: (mergeSeconds ?? this.mergeSeconds).clamp(2, 10),
     shadowEnabled: shadowEnabled ?? this.shadowEnabled,
+    highRefreshRate: highRefreshRate ?? this.highRefreshRate,
     blockedWordsEnabled: blockedWordsEnabled ?? this.blockedWordsEnabled,
     blockedWords: blockedWords == null
         ? this.blockedWords
@@ -173,6 +177,7 @@ class DanmakuStyle {
     'rows': rows,
     'mergeSeconds': mergeSeconds,
     'shadowEnabled': shadowEnabled,
+    'highRefreshRate': highRefreshRate,
     'blockedWordsEnabled': blockedWordsEnabled,
     'blockedWords': blockedWords,
   };
@@ -198,6 +203,9 @@ class DanmakuStyle {
       mergeSeconds: number('mergeSeconds', 5).clamp(2, 10).round(),
       shadowEnabled: json['shadowEnabled'] is bool
           ? json['shadowEnabled'] as bool
+          : true,
+      highRefreshRate: json['highRefreshRate'] is bool
+          ? json['highRefreshRate'] as bool
           : true,
       blockedWordsEnabled: json['blockedWordsEnabled'] is bool
           ? json['blockedWordsEnabled'] as bool

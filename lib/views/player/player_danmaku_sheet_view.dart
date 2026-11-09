@@ -126,6 +126,7 @@ class _PlayerDanmakuSheetViewState extends State<PlayerDanmakuSheetView> {
                                 rows: 3,
                                 mergeSeconds: 5,
                                 shadowEnabled: true,
+                                highRefreshRate: true,
                               ),
                             ),
                       child: const Text('恢复默认'),
@@ -215,6 +216,24 @@ class _PlayerDanmakuSheetViewState extends State<PlayerDanmakuSheetView> {
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _card(
+                        child: SwitchListTile.adaptive(
+                          key: const ValueKey(
+                            'danmaku-high-refresh-rate-switch',
+                          ),
+                          title: const Text('弹幕高刷新率'),
+                          subtitle: const Text('在支持的设备上滚动更流畅，耗电可能增加'),
+                          value: _style.highRefreshRate,
+                          activeThumbColor: AppColors.white,
+                          activeTrackColor: AppColors.success,
+                          onChanged: _saving
+                              ? null
+                              : (value) => _saveControlStyle(
+                                  _style.copyWith(highRefreshRate: value),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 14),
