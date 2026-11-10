@@ -1,3 +1,4 @@
+import '../../views/account/hongguo_social_dialog.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -1384,6 +1385,10 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                   const SizedBox(height: 8),
                   _followingControls(drama),
+                  HongguoSocialButton(
+                    drama: drama,
+                    episode: widget.store.watched(drama.id)?.episode ?? 1,
+                  ),
                 ],
               ),
             ),

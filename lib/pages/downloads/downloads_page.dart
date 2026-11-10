@@ -78,8 +78,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     _updater = DownloadCollectionUpdater(widget.repository, widget.store)
       ..addListener(_changed);
     widget.store.addListener(_changed);
-    _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
+    if (widget.repository.supportsDownloads) {
+      _refresh();
+      _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
+    } else {
+      _loading = false;
+    }
   }
 
   void _changed() {
@@ -730,6 +734,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.repository.supportsDownloads) {
+      return const StatusPanel(
+        title: '当前版本尚未提供下载',
+        message: '下载传输、断点续传与离线播放服务尚未接入，可继续使用在线播放。',
+      );
+    }
     if (!_allowed) {
       return const StatusPanel(title: '当前用户无权访问下载', message: '请返回后重新操作。');
     }

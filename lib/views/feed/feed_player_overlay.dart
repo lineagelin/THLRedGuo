@@ -26,6 +26,7 @@ class FeedPlayerOverlay extends StatelessWidget {
     this.cleanScreen = false,
     this.transitioning = false,
     this.onCleanScreen,
+    this.onSocial,
   });
 
   final bool cleanScreen, transitioning;
@@ -46,6 +47,7 @@ class FeedPlayerOverlay extends StatelessWidget {
   final VoidCallback onDetail;
   final VoidCallback onDanmaku;
   final VoidCallback onSettings;
+  final VoidCallback? onSocial;
 
   Widget _action(String id, IconData icon, String label, VoidCallback action) =>
       IconButton(
@@ -65,6 +67,8 @@ class FeedPlayerOverlay extends StatelessWidget {
     builder: (context, constraints) {
       final compact = constraints.maxHeight < 480;
       final actions = [
+        if (onSocial != null)
+          _action('social', Icons.favorite_border, '点赞与关注', onSocial!),
         _action(
           'favorite',
           following ? Icons.bookmark : Icons.bookmark_border,

@@ -1,29 +1,10 @@
 import SwiftUI
 
-/// 播放器浮层焦点枚举
-public enum PlayerOverlayFocusTarget: Hashable {
-    case back
-    case danmaku
-    case danmakuSettings
-    case speed
-    case quality
-    case seekBackward
-    case playPause
-    case seekForward
-    case prevEpisode
-    case episodeDrawer
-    case nextEpisode
-    case previousDrama
-    case nextDrama
-    case favorite
-    case detail
-    case refreshFeed
-}
-
 public struct TVPlayerControlsOverlay: View {
     @ObservedObject var viewModel: PlayerViewModel
     public var forceFocusPlayButton: Bool = false
     public var feedActions: TVVideoFeedActions?
+    public var onSocial: (() -> Void)? = nil
     public let onDismiss: () -> Void
 
     @FocusState private var focusedControl: PlayerOverlayFocusTarget?
@@ -32,78 +13,26 @@ public struct TVPlayerControlsOverlay: View {
         viewModel: PlayerViewModel,
         forceFocusPlayButton: Bool = false,
         feedActions: TVVideoFeedActions? = nil,
+        onSocial: (() -> Void)? = nil,
         onDismiss: @escaping () -> Void
     ) {
         self.viewModel = viewModel
         self.forceFocusPlayButton = forceFocusPlayButton
         self.feedActions = feedActions
+        self.onSocial = onSocial
         self.onDismiss = onDismiss
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 顶部剧集信息条（局部顶部渐变，全屏贴顶铺满；无需返回按钮，由原生 Menu 键直接返回）
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(viewModel.drama.title)
-                            .accessibilityIdentifier("player.title")
-                            .font(.title3)
-                            .bold()
-                            .foregroundColor(TVTheme.textPrimary)
-                        Text("第 \(viewModel.currentEpisodeIndex) 集 · \(PlaybackPlan.qualityLabel(viewModel.selectedQuality))")
-                            .accessibilityIdentifier("player.episode")
-                            .font(.subheadline)
-                            .foregroundColor(TVTheme.textSecondary)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 56)
-                .padding(.top, 42)
-
-                if let feedActions {
-                    Text(feedActions.progressText)
-                        .font(.system(size: 22))
-                        .accessibilityIdentifier("feed.progress")
-                    HStack(spacing: 18) {
-                        overlayBarButton(title: "上一部", icon: "arrow.up", target: .previousDrama, action: feedActions.onPrevious)
-                            .disabled(!feedActions.canGoPrevious)
-                            .opacity(feedActions.canGoPrevious ? 1 : 0.45)
-                        overlayBarButton(title: "下一部", icon: "arrow.down", target: .nextDrama) {
-                            Task { _ = await feedActions.onNext() }
-                        }
-                        .disabled(!feedActions.canGoNext)
-                        .opacity(feedActions.canGoNext ? 1 : 0.45)
-                        overlayBarButton(title: feedActions.isFavorite ? "已收藏" : "收藏", icon: "bookmark", target: .favorite, action: feedActions.onFavorite)
-                        overlayBarButton(title: "剧集详情", icon: "info.circle", target: .detail) {
-                            feedActions.onDetail(viewModel.drama)
-                        }
-                        overlayBarButton(title: "换一批", icon: "arrow.clockwise", target: .refreshFeed, action: feedActions.onRefresh)
-                            .disabled(feedActions.isLoading)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 56)
-                    .padding(.top, 18)
-                    .onMoveCommand { direction in
-                        if direction == .down { focusedControl = .playPause }
-                    }
-                    Text(feedActions.errorMessage ?? "画面模式下按上下键切换短剧，点按显示控制")
-                        .font(.system(size: 22))
-                        .foregroundStyle(feedActions.errorMessage == nil ? .white.opacity(0.8) : .yellow)
-                        .padding(.top, 12)
-                        .lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.bottom, 24)
-            .background(
-                LinearGradient(
-                    colors: [Color.black.opacity(0.88), Color.black.opacity(0.45), Color.clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea(edges: [.top, .horizontal])
+            // MARK: - 顶部剧集信息条
+            TVPlayerTopInfoBar(
+                title: viewModel.drama.title,
+                episodeText: "第 \(viewModel.currentEpisodeIndex) 集 · \(PlaybackPlan.qualityLabel(viewModel.selectedQuality))",
+                onSocial: onSocial,
+                feedActions: feedActions,
+                drama: viewModel.drama,
+                focusedControl: $focusedControl
             )
 
             // 中间纯净视频画面，支持点击收起控制栏（完全透明，不产生任何可见背景色块）
@@ -173,8 +102,9 @@ public struct TVPlayerControlsOverlay: View {
                         }
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down: focusedControl = .speed
+                            case .left: focusedControl = .pip
                             case .right: focusedControl = .playPause
                             default: break
                             }
@@ -193,7 +123,7 @@ public struct TVPlayerControlsOverlay: View {
                         .accessibilityLabel(viewModel.wantsPlayback ? "暂停" : "播放")
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down: focusedControl = .speed
                             case .left: focusedControl = .seekBackward
                             case .right: focusedControl = .seekForward
@@ -211,7 +141,7 @@ public struct TVPlayerControlsOverlay: View {
                         }
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down:
                                 if let plan = viewModel.plan, !plan.qualities.isEmpty {
                                     focusedControl = .quality
@@ -241,7 +171,7 @@ public struct TVPlayerControlsOverlay: View {
                         .opacity(viewModel.currentEpisodeIndex <= 1 ? 0.5 : 1.0)
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down:
                                 if let plan = viewModel.plan, !plan.qualities.isEmpty {
                                     focusedControl = .quality
@@ -266,7 +196,7 @@ public struct TVPlayerControlsOverlay: View {
                         }
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down: focusedControl = .danmaku
                             case .left:
                                 if viewModel.currentEpisodeIndex > 1 {
@@ -296,10 +226,33 @@ public struct TVPlayerControlsOverlay: View {
                         .opacity(viewModel.currentEpisodeIndex >= viewModel.allEpisodes.count ? 0.5 : 1.0)
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up: if feedActions != nil { focusedControl = .nextDrama }
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
                             case .down: focusedControl = .danmakuSettings
                             case .left: focusedControl = .episodeDrawer
-                            case .right: focusedControl = .speed
+                            case .right: focusedControl = .pip
+                            default: break
+                            }
+                        }
+
+                        // 7. 画中画 (核心控制栏显眼入口)
+                        overlayBarButton(
+                            title: "画中画",
+                            icon: "pip.enter",
+                            target: .pip
+                        ) {
+                            viewModel.startPictureInPicture()
+                        }
+                        .onMoveCommand { dir in
+                            switch dir {
+                            case .up: if feedActions != nil { focusedControl = .nextDrama } else if onSocial != nil { focusedControl = .social }
+                            case .down: focusedControl = .danmakuSettings
+                            case .left:
+                                if viewModel.currentEpisodeIndex < viewModel.allEpisodes.count {
+                                    focusedControl = .nextEpisode
+                                } else {
+                                    focusedControl = .episodeDrawer
+                                }
+                            case .right: focusedControl = .seekBackward
                             default: break
                             }
                         }
@@ -395,13 +348,9 @@ public struct TVPlayerControlsOverlay: View {
                         }
                         .onMoveCommand { dir in
                             switch dir {
-                            case .up:
-                                if viewModel.currentEpisodeIndex < viewModel.allEpisodes.count {
-                                    focusedControl = .nextEpisode
-                                } else {
-                                    focusedControl = .episodeDrawer
-                                }
+                            case .up: focusedControl = .pip
                             case .left: focusedControl = .danmaku
+                            case .right: focusedControl = .speed
                             default: break
                             }
                         }
@@ -426,11 +375,17 @@ public struct TVPlayerControlsOverlay: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        .focusSection()
+        .defaultFocus($focusedControl, .playPause)
         .onExitCommand {
             NSLog("🎬 [Overlay] 遥控器按下 Menu 键，拦截模态退出，仅收起控制栏")
             withAnimation(.easeInOut(duration: 0.2)) {
                 viewModel.hideControls()
             }
+        }
+        .onPlayPauseCommand {
+            NSLog("🎬 [Overlay] 响应遥控器 Play/Pause 按键")
+            viewModel.togglePlayPause()
         }
         .onChange(of: focusedControl) { _, _ in viewModel.showControls() }
         .onAppear {

@@ -1,3 +1,4 @@
+import 'test_helpers/official_source_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -5,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:THLRedLook/core/account/hongguo_account_service.dart';
+import 'package:THLRedLook/core/account/hongguo_social_models.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/core/account/hongguo_account_session.dart';
 import 'package:THLRedLook/core/js/hongguo_guest_session.dart';
@@ -43,7 +45,12 @@ class _Headers implements HttpHeaders {
   List<String>? operator [](String name) =>
       name == HttpHeaders.setCookieHeader ? cookies : null;
   @override
-  String? value(String name) => fields[name]?.toString();
+  String? value(String name) {
+    final value = fields[name];
+    if (value is Exception) throw value;
+    return value?.toString();
+  }
+
   @override
   void set(String name, Object value, {bool preserveHeaderCase = false}) {
     fields[name] = value;
@@ -112,6 +119,7 @@ class _DeferredClient extends _Client {
 }
 
 void main() {
+  setUp(installSyntheticOfficialAsset);
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     SourceDiagnostics.shared.clear();
@@ -469,6 +477,327 @@ void main() {
     await session.logout();
     expect(session.avatar, isEmpty);
   });
+  test('创作者关注只接受用户 ID，不把展示用红果号作为关注目标', () async {
+    final session = HongguoAccountSession();
+    await session.bindProfile('synthetic-creator-identity');
+    final jar = HongguoAccountCookies()
+      ..merge(Uri.parse('https://hongguoduanju.com/'), [
+        'sessionid=synthetic-creator-identity; Path=/; Secure',
+      ]);
+    await session.accept(jar, {
+      'id': '123',
+    }, expectedRevision: session.revision);
+    final service = HongguoAccountService(session: session);
+    addTearDown(service.dispose);
+    final drama = Drama(
+      id: 'hongguo:7688558312157088793',
+      source: 'hongguo',
+      sourceId: '7688558312157088793',
+      title: 'synthetic',
+      cover: '',
+      description: '',
+      episodes: 1,
+    );
+    await HttpOverrides.runZoned(
+      () async {
+        final rows = await service.creators(drama);
+        expect(rows.map((row) => row.id), [
+          '7688558312157088794',
+          '7688558312157088795',
+        ]);
+        expect(rows.map((row) => row.name), ['根用户编号', '基础用户编号']);
+      },
+      createHttpClient: (_) => _Client((uri, headers) {
+        expect(uri.path, '/reading/user/celebrity/list/v1/');
+        expect(headers.value('Cookie'), 'sessionid=synthetic-creator-identity');
+        return _Reply({
+          'code': 0,
+          'data': {
+            'hot_celebrity_user_list': [
+              {
+                'user_id': '7688558312157088794',
+                'base_info': {
+                  'user_id': '7688558312157088796',
+                  'biz_user_id': '10001',
+                  'user_name': '根用户编号',
+                },
+              },
+              {
+                'user_id': 'invalid',
+                'base_info': {
+                  'user_id': '7688558312157088795',
+                  'biz_user_id': '10002',
+                  'user_name': '基础用户编号',
+                },
+              },
+              {
+                'base_info': {'biz_user_id': '10003', 'user_name': '只有红果号'},
+              },
+              {
+                'user_id': '7688558312157088794',
+                'base_info': {'user_name': '重复'},
+              },
+            ],
+          },
+        });
+      }),
+    );
+  });
+  test('官方分集点赞和作者关注使用独立接口、当前账号并回读确认', () async {
+    final session = HongguoAccountSession();
+    await session.bindProfile('synthetic-social');
+    final jar = HongguoAccountCookies()
+      ..merge(Uri.parse('https://hongguoduanju.com/'), [
+        'sessionid=synthetic-social; Path=/; Secure',
+      ]);
+    await session.accept(jar, {
+      'id': '123',
+    }, expectedRevision: session.revision);
+    final drama = Drama(
+      id: 'hongguo:7688558312157088793',
+      source: 'hongguo',
+      sourceId: '7688558312157088793',
+      title: 'synthetic',
+      cover: '',
+      description: '',
+      episodes: 12,
+    );
+    var liked = false, followed = false, writes = 0, mismatch = false;
+    var rejectCreator = false,
+        untrustedLogId = false,
+        duplicateLogId = false,
+        rejectLike = false,
+        malformedCreatorCode = false;
+    final service = HongguoAccountService(session: session);
+    addTearDown(service.dispose);
+    await HttpOverrides.runZoned(
+      () async {
+        final initial = await service.social(drama);
+        expect(initial.episode(1)!.liked, false);
+        expect(initial.creators.single.id, '7688558312157088794');
+        expect(initial.creators.single.relativeType, 3);
+        final like = await service.setLiked(drama, initial.episode(1)!, true);
+        expect(like.episode(1)!.liked, true);
+        expect(like.episode(1)!.count, 11);
+        final rows = await service.setCreatorFollowing(
+          drama,
+          initial.creators.single,
+          true,
+        );
+        expect(rows.single.following, true);
+        final removed = await service.setCreatorFollowing(
+          drama,
+          rows.single,
+          false,
+        );
+        expect(removed.single.following, false);
+        await service.setLiked(drama, like.episode(1)!, false);
+        expect(writes, 4);
+        mismatch = true;
+        await expectLater(
+          service.setLiked(drama, initial.episode(1)!, true),
+          throwsA(
+            isA<HongguoAccountFailure>().having(
+              (e) => e.code,
+              'readback',
+              'WRITE_NOT_CONFIRMED',
+            ),
+          ),
+        );
+        expect(writes, 5);
+        await expectLater(
+          service.setCreatorFollowing(
+            drama,
+            const HongguoCreator(
+              '7688558312157088794',
+              'unknown',
+              2,
+              null,
+              true,
+            ),
+            true,
+          ),
+          throwsA(isA<HongguoAccountFailure>()),
+        );
+        await expectLater(
+          service.setCreatorFollowing(
+            drama,
+            const HongguoCreator('123', 'self', 2, false, true),
+            true,
+          ),
+          throwsA(isA<HongguoAccountFailure>()),
+        );
+        expect(writes, 5);
+        rejectCreator = true;
+        await expectLater(
+          service.setCreatorFollowing(drama, initial.creators.single, true),
+          throwsA(
+            isA<HongguoAccountFailure>()
+                .having(
+                  (failure) => failure.code,
+                  'official rejection',
+                  'BUSINESS_103012',
+                )
+                .having(
+                  (failure) => failure.message,
+                  'comment API risk classification',
+                  contains('安全校验未通过'),
+                ),
+          ),
+        );
+        expect(followed, isFalse);
+        expect(writes, 6);
+        SourceDiagnosticEntry lastResponse() =>
+            SourceDiagnostics.shared.entries.lastWhere(
+              (entry) => entry.stage == 'creatorFollow' && entry.status == 200,
+            );
+        final record = lastResponse();
+        expect(record.context, '红果作者关注');
+        expect(record.businessCode, '103012');
+        expect(record.errorCategory, 'upstream_security');
+        expect(record.logId, 'ABCDEF0123456789ABCDEF0123456789');
+        expect(record.sessionStatus, contains('gatewayLogin=1'));
+        expect(record.url, endsWith('/novel/commentapi/comment/do_action/v1/'));
+        expect(record.url, isNot(contains('?')));
+        for (final sensitive in [
+          'synthetic-social',
+          'opaque-account-value',
+          'private-sdk-details',
+          '7688558312157088794',
+        ]) {
+          expect(record.toReportBlock(), isNot(contains(sensitive)));
+        }
+        untrustedLogId = true;
+        await expectLater(
+          service.setCreatorFollowing(drama, initial.creators.single, true),
+          throwsA(isA<HongguoAccountFailure>()),
+        );
+        expect(lastResponse().logId, isEmpty);
+        duplicateLogId = true;
+        await expectLater(
+          service.setCreatorFollowing(drama, initial.creators.single, true),
+          throwsA(
+            isA<HongguoAccountFailure>().having(
+              (failure) => failure.code,
+              'diagnostic header error preserves business failure',
+              'BUSINESS_103012',
+            ),
+          ),
+        );
+        expect(lastResponse().logId, isEmpty);
+        rejectLike = true;
+        await expectLater(
+          service.setLiked(drama, initial.episode(1)!, true),
+          throwsA(
+            isA<HongguoAccountFailure>().having(
+              (failure) => failure.message,
+              'scope classification to comment follow API',
+              isNot(contains('安全校验未通过')),
+            ),
+          ),
+        );
+        expect(session.loggedIn, isTrue);
+        expect(session.id, '123');
+        malformedCreatorCode = true;
+        await expectLater(
+          service.setCreatorFollowing(drama, initial.creators.single, true),
+          throwsA(isA<HongguoAccountFailure>()),
+        );
+        expect(lastResponse().businessCode, isEmpty);
+        expect(lastResponse().errorCode, 'INVALID_RESPONSE');
+        expect(
+          lastResponse().toReportBlock(),
+          isNot(contains('opaque-account-value')),
+        );
+      },
+      createHttpClient: (_) => _Client((uri, headers) {
+        expect(headers.value('Cookie'), 'sessionid=synthetic-social');
+        if (uri.path == '/novel/player/video_detail/v1/') {
+          final body = jsonDecode(headers.value('synthetic-body')!) as Map;
+          expect(body['series_id'], drama.cleanSourceId);
+          return _Reply({
+            'code': 0,
+            'data': {
+              'video_data': {
+                'series_id_str': drama.cleanSourceId,
+                'video_list': [
+                  {
+                    'vid': '7688558312157088795',
+                    'vid_index': 1,
+                    'user_digg': mismatch ? false : liked,
+                    'digged_count': liked ? 11 : 10,
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (uri.path == '/reading/user/celebrity/list/v1/') {
+          expect(uri.queryParameters['list_type'], '3');
+          return _Reply({
+            'code': 0,
+            'data': {
+              'main_creator_user_list': [
+                {
+                  'group_type': 'author',
+                  'ugc_user_infos': [
+                    {
+                      'user_id': '7688558312157088794',
+                      'base_info': {'user_name': '合成作者'},
+                      'user_tag': {'is_author': true},
+                      'user_relation': {
+                        'relation_type': followed ? 2 : 1,
+                        'can_follow': true,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
+        final body = jsonDecode(headers.value('synthetic-body')!) as Map;
+        writes++;
+        if (uri.path == '/reading/ugc/action/set/v1/') {
+          expect(body['object_id'], '7688558312157088795');
+          expect(body['object_type'], 6);
+          expect(body['action_category'], 1);
+          expect([3, 4], contains(body['action_type']));
+          if (rejectLike) return _Reply({'code': 103012});
+          liked = body['action_type'] == 3;
+        } else {
+          expect(uri.path, '/novel/commentapi/comment/do_action/v1/');
+          expect(body['object_id'], '7688558312157088794');
+          expect(body['object_type'], 1);
+          expect(body['aid'], 8662);
+          expect(body['business_param'], {'shark_param': <String, dynamic>{}});
+          expect(body.containsKey('relative_id'), isFalse);
+          expect(body.containsKey('relative_type'), isFalse);
+          expect([25, 26], contains(body['action_type']));
+          if (rejectCreator) {
+            final reply = _Reply({
+              'code': malformedCreatorCode ? 'opaque-account-value' : 103012,
+              'message': '关注失败，请稍后再试',
+              'debug_info': 'private-sdk-details',
+            });
+            (reply.headers as _Headers).fields.addAll({
+              'x-tt-logid': duplicateLogId
+                  ? const HttpException('synthetic repeated header')
+                  : untrustedLogId
+                  ? 'sessionid=opaque-account-value'
+                  : 'ABCDEF0123456789ABCDEF0123456789',
+              'x-tt-agw-login': '1',
+              'x-tt-token': 'opaque-account-value',
+            });
+            return reply;
+          }
+          followed = body['action_type'] == 25;
+        }
+        return _Reply({'code': 0});
+      }),
+    );
+  });
+
   test('账号列表格式改变和业务拒绝不能变成成功空列表', () async {
     final session = HongguoAccountSession();
     await session.bindProfile('synthetic-invalid-library');

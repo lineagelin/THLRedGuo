@@ -108,10 +108,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('账号登录提示'), findsOneWidget);
-      expect(
-        find.textContaining('原有本地与 iCloud 记录会保留，退出账号后继续使用'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('原有本地与 iCloud 记录会保留'), findsOneWidget);
       expect(find.text('取消'), findsOneWidget);
       expect(find.text('确认登录'), findsOneWidget);
 

@@ -1,4 +1,5 @@
 import 'package:THLRedLook/utils/screen/screen_wake_controller.dart';
+import '../../views/account/hongguo_social_dialog.dart';
 import 'dart:async';
 import '../../core/account/hongguo_account_session.dart';
 import 'dart:io';
@@ -138,6 +139,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _healthTimer;
   Timer? _errorTimer;
   Timer? _pictureInPictureExitTimer;
+  Timer? _diagnosticsTimer;
   Future<void> _operations = Future<void>.value();
   late int _index;
   late final int _profileEpoch;
@@ -146,6 +148,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _generation = 0;
   int _seasonSwitchTicket = 0;
   int _requestedQuality = 0;
+  PlaybackDecoderMode _decoderMode = PlaybackDecoderMode.hardware;
   bool _loading = true;
   bool _forceOnline = false;
   bool _localFailure = false;
@@ -203,6 +206,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       widget.store.playbackPreferences.copyWith(
         speed: _speed,
         quality: _requestedQuality,
+        decoderMode: _decoderMode,
         autoAdvance: _autoAdvance,
         danmaku: _danmakuEnabled,
         danmakuStyle: _danmakuStyle,
@@ -239,6 +243,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final preferences = widget.store.playbackPreferences;
     _speed = preferences.speed;
     _requestedQuality = preferences.quality;
+    _decoderMode = preferences.decoderMode;
     _autoAdvance = preferences.autoAdvance;
     _danmakuEnabled = preferences.danmaku;
     _danmakuStyle = preferences.danmakuStyle;
@@ -256,9 +261,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         ((Platform.isAndroid || Platform.isIOS)
             ? LunaExoPlayer()
             : Player(
-                configuration: const PlayerConfiguration(
+                configuration: PlayerConfiguration(
                   bufferSize: 32 * 1024 * 1024,
-                  logLevel: MPVLogLevel.error,
+                  logLevel: Platform.isWindows
+                      ? MPVLogLevel.v
+                      : MPVLogLevel.error,
                 ),
               ));
     if (_player is LunaExoPlayer) {
@@ -268,7 +275,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         ? VideoController(
             _player,
             configuration: VideoControllerConfiguration(
-              enableHardwareAcceleration: !Platform.isIOS,
+              enableHardwareAcceleration:
+                  !Platform.isIOS &&
+                  preferences.decoderMode == PlaybackDecoderMode.hardware,
+              hwdec: preferences.decoderMode == PlaybackDecoderMode.hardware
+                  ? (Platform.isWindows ? 'auto-copy-safe' : 'auto-safe')
+                  : 'no',
             ),
           )
         : null;
@@ -1735,6 +1747,20 @@ class _PlayerScreenState extends State<PlayerScreen>
           await ScreenWakeController.instance.releaseForSleep();
         }
         _openedIndex = index;
+        DiaryService.add(
+          '[Play] 清晰度判定: 请求=${_requestedQuality > 0 ? "${_requestedQuality}P" : "自动(优先高清)"}, '
+          '源下发=${plan.quality > 0 ? "${plan.quality}P" : "未知"}, '
+          '当前集可选=[${plan.qualities.map((q) => "${q}P").join('/')}], '
+          '状态=${_requestedQuality > 0 && plan.quality > 0 && _requestedQuality != plan.quality ? "当前集无请求档位，自动回退/匹配" : "完全匹配"}',
+        );
+        _diagnosticsTimer?.cancel();
+        _diagnosticsTimer = Timer(const Duration(seconds: 2), () async {
+          if (_closed || ticket != _generation) return;
+          final diag = await _getDiagnostics();
+          if (diag != null) {
+            DiaryService.add(diag.toDiaryLog());
+          }
+        });
         _enhancement.mediaReady();
         _attachLanPlayback();
         _health.reset();
@@ -1920,11 +1946,22 @@ class _PlayerScreenState extends State<PlayerScreen>
         nextPreferences.decoderMode != previousPreferences.decoderMode;
     if (_player is LunaExoPlayer) {
       _player.setDecoderMode(nextPreferences.decoderMode);
+    } else if (decoderChanged && Platform.isWindows) {
+      final native = _player.platform;
+      if (native is NativePlayer) {
+        await native.setProperty(
+          'hwdec',
+          nextPreferences.decoderMode == PlaybackDecoderMode.hardware
+              ? 'auto-copy-safe'
+              : 'no',
+        );
+      }
     }
     _enhancement.setPreferences(nextPreferences.enhancement);
     setState(() {
       _speed = nextPreferences.speed;
       _requestedQuality = nextPreferences.quality;
+      _decoderMode = nextPreferences.decoderMode;
       _autoAdvance = nextPreferences.autoAdvance;
       _danmakuEnabled = nextPreferences.danmaku;
       _danmakuStyle = nextPreferences.danmakuStyle;
@@ -2414,6 +2451,37 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  Future<PlaybackTechnicalDiagnostics?> _getDiagnostics() async {
+    final player = _player;
+    if (player is LunaExoPlayer) {
+      return player.getDiagnostics(
+        requestedQuality: _requestedQuality,
+        actualQuality: _plan?.quality ?? 0,
+        availableQualities: _plan?.qualities ?? const [],
+        mediaHost: Uri.tryParse(_plan?.url ?? '')?.host,
+      );
+    }
+    final state = _player.state;
+    final w = state.videoParams.w;
+    final h = state.videoParams.h;
+    const codec = 'hevc';
+    return PlaybackTechnicalDiagnostics(
+      playerEngine: 'MediaKit (NativePlayer)',
+      decoderName: codec,
+      isHardwareAccelerated: _decoderMode == PlaybackDecoderMode.hardware,
+      videoWidth: w,
+      videoHeight: h,
+      bufferDuration: state.buffer,
+      bufferingEventsCount: 0,
+      requestedQuality: _requestedQuality,
+      actualQuality: _plan?.quality ?? 0,
+      availableQualities: _plan?.qualities ?? const [],
+      isEncrypted: _plan?.decryptionKey.isNotEmpty == true,
+      mediaHost: Uri.tryParse(_plan?.url ?? '')?.host,
+      timestamp: DateTime.now(),
+    );
+  }
+
   Future<void> _televisionSettings(BuildContext context) async {
     if (_panelOpen || _closed) return;
     setState(() => _panelOpen = true);
@@ -2424,6 +2492,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         speed: _speed,
         quality: _requestedQuality,
         qualities: _plan?.qualities ?? [],
+        actualQuality: _plan?.quality ?? 0,
         favorite: widget.store.isFavorite(widget.detail.drama.id),
         onFavorite: _toggleFavorite,
         autoAdvance: _autoAdvance,
@@ -2463,6 +2532,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _back() {
     if (_showFullscreen && !_television) {
       _rotate();
+    } else if (_television) {
+      Navigator.of(context).pop();
     } else {
       Navigator.of(context).maybePop();
     }
@@ -2494,6 +2565,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _healthTimer?.cancel();
     _errorTimer?.cancel();
     _pictureInPictureExitTimer?.cancel();
+    _diagnosticsTimer?.cancel();
     if (_pictureInPictureHandlerInstalled) {
       PipManager.instance.notifyPlayerDisposed();
     }
@@ -2565,7 +2637,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fullscreen = _showFullscreen;
     final pictureInPicture = _pictureInPictureVisible;
     return PopScope(
-      canPop: _television || pictureInPicture || !fullscreen,
+      canPop: !_television && (pictureInPicture || !fullscreen),
       onPopInvokedWithResult: (didPop, result) {
         if (didPop && widget.store.usesAccountLibrary(widget.detail.drama.id)) {
           unawaited(_saveProgress(flush: true));
@@ -2615,9 +2687,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ],
                   ),
-            body: _mobile && !fullscreen && !pictureInPicture
-                ? _videoPane(context)
-                : pictureInPicture
+            body: pictureInPicture
+                ? _videoPane(context, topPadding: 0.0)
+                : _mobile && !fullscreen
                 ? _videoPane(context)
                 : SafeArea(
                     top: false,
@@ -2746,6 +2818,15 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
           ),
+          onSocial: widget.store.usesAccountLibrary(widget.detail.drama.id)
+              ? () => unawaited(
+                  showHongguoSocialDialog(
+                    context,
+                    widget.detail.drama,
+                    widget.detail.episodes[_index].number,
+                  ),
+                )
+              : null,
           onFavorite: () => unawaited(
             saveUserChange(
               context,
@@ -2835,6 +2916,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       onRestorePictureInPicture: _restoreFromPictureInPicture,
       onTelevisionEpisodes: _televisionEpisodes,
       onTelevisionSettings: _televisionSettings,
+      onFetchDiagnostics: _getDiagnostics,
     );
     if (!_mobile || widget.feed || _pictureInPictureVisible) return viewport;
     return StreamBuilder<Duration>(

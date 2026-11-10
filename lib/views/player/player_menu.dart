@@ -34,8 +34,10 @@ class PlayerMenu extends StatefulWidget {
     this.preloadStatus = '',
     this.enhancement,
     this.onCompareEnhancement,
+    this.accountActions,
   });
 
+  final Widget? accountActions;
   final PlayerMenuSection section;
   final List<Episode> episodes;
   final int currentIndex;
@@ -364,7 +366,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
             title: const Text('解码模式'),
             subtitle: Text(
               preferences.decoderMode == PlaybackDecoderMode.hardware
-                  ? '⚡ 极速硬解优先（MediaCodec 硬件加速）'
+                  ? '⚡ 优先使用设备硬件解码'
                   : '🛡️ 兼容稳定模式（MediaKit 软解兼容引擎）',
             ),
             trailing: DropdownButton<PlaybackDecoderMode>(
@@ -430,6 +432,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
             ),
             label: Text(widget.favorite ? '取消追剧' : '加入追剧'),
           ),
+          if (widget.accountActions != null) widget.accountActions!,
           const SizedBox(height: 12),
           OutlinedButton.icon(
             key: const ValueKey('player-diary-btn'),

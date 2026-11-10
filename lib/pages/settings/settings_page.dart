@@ -19,6 +19,7 @@ import 'package:THLRedLook/pages/settings/resource_settings_page.dart';
 import 'package:THLRedLook/pages/settings/source_diagnostics_page.dart';
 import 'package:THLRedLook/pages/settings/storage_page.dart';
 import 'package:THLRedLook/pages/settings/theme_settings_page.dart';
+import 'package:THLRedLook/pages/settings/release_notes_page.dart';
 import 'package:THLRedLook/pages/sources/sources_page.dart';
 import 'package:THLRedLook/utils/build/app_build.dart';
 import 'package:THLRedLook/utils/diary/diary_service.dart';
@@ -148,7 +149,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     leading: const Icon(Icons.tune_rounded),
                     title: const Text('播放设置'),
                     subtitle: Text(
-                      '默认 $qualityLabel · ${playPrefs.speed}x · 弹幕${playPrefs.danmaku ? "开启" : "关闭"}${playPrefs.pictureInPicture ? " · 画中画开启" : ""}',
+                      '默认 $qualityLabel · ${playPrefs.speed}x · 弹幕${playPrefs.danmaku ? "开启" : "关闭"}${playPrefs.pictureInPicture && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) ? " · 画中画开启" : ""}',
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => Navigator.push(
@@ -366,6 +367,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => triggerCheckUpdate(context),
                     ),
+                  ListTile(
+                    key: const ValueKey('settings-release-notes-entry'),
+                    leading: const Icon(Icons.history_rounded),
+                    title: const Text('更新内容'),
+                    subtitle: const Text('版本历程 · 每次版本与功能的更新记录'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ReleaseNotesPage(),
+                      ),
+                    ),
+                  ),
                   ListTile(
                     key: const ValueKey('settings-app-intro-entry'),
                     leading: const Icon(Icons.menu_book_outlined),

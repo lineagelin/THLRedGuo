@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -11,6 +12,7 @@ import 'package:THLRedLook/views/danmaku/danmaku_overlay.dart';
 import 'package:THLRedLook/utils/diary/diary_service.dart';
 import 'package:THLRedLook/core/store/local_store.dart';
 import 'package:THLRedLook/core/player/luna_exo_player.dart';
+import 'package:THLRedLook/core/player/playback_diagnostics.dart';
 import 'package:THLRedLook/models/catalog/models.dart';
 import 'package:THLRedLook/core/player/player_interactions.dart';
 import 'package:THLRedLook/views/player/player_menu.dart';
@@ -83,12 +85,14 @@ class PlayerViewportView extends StatelessWidget {
     this.onRestorePictureInPicture,
     required this.onTelevisionEpisodes,
     required this.onTelevisionSettings,
+    this.onFetchDiagnostics,
     this.topPadding = 0.0,
     this.danmakuTopInset = 0.0,
   });
 
   final double topPadding;
   final double danmakuTopInset;
+  final Future<PlaybackTechnicalDiagnostics?> Function()? onFetchDiagnostics;
   final bool television;
   final bool fullscreen;
   final bool pictureInPictureVisible;
@@ -161,7 +165,9 @@ class PlayerViewportView extends StatelessWidget {
     final title =
         '${detail.drama.title} · 第 ${detail.episodes[index].number} 集${plan?.offline == true ? ' · 本地' : ''}${isVipEp ? ' · VIP 试看' : ''}${(plan?.routeIndex ?? 0) > 0 ? ' · 线路 ${plan!.routeIndex + 1}' : ''}';
     final hideOverlayForPictureInPicture = pictureInPictureVisible;
-    final Widget controls = hideOverlayForPictureInPicture
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+    final showPipPlaceholder = hideOverlayForPictureInPicture && !isAndroid;
+    final Widget controls = showPipPlaceholder
         ? Stack(
             fit: StackFit.expand,
             children: [
@@ -285,6 +291,8 @@ class PlayerViewportView extends StatelessWidget {
               ),
             ],
           )
+        : hideOverlayForPictureInPicture
+        ? const SizedBox.shrink()
         : television
         ? TelevisionControls(
             player: player,
@@ -301,6 +309,7 @@ class PlayerViewportView extends StatelessWidget {
             onEpisodes: () => onTelevisionEpisodes(context),
             onSettings: () => onTelevisionSettings(context),
             onBack: onBack,
+            onFetchDiagnostics: onFetchDiagnostics,
           )
         : PlayerControls(
             player: player,
@@ -347,16 +356,22 @@ class PlayerViewportView extends StatelessWidget {
     final layeredControls = Stack(
       fit: StackFit.expand,
       children: [
-        if (!hideOverlayForPictureInPicture && !hideDanmaku)
-          Padding(
-            padding: EdgeInsets.only(top: danmakuTopInset),
-            child: DanmakuOverlay(
-              controller: danmaku,
-              aspectRatio: aspectRatio,
-              style: danmakuStyle ?? const DanmakuStyle(),
+        if (!hideOverlayForPictureInPicture) ...[
+          if (!hideDanmaku)
+            Padding(
+              padding: EdgeInsets.only(top: danmakuTopInset),
+              child: DanmakuOverlay(
+                controller: danmaku,
+                aspectRatio: aspectRatio,
+                style: danmakuStyle ?? const DanmakuStyle(),
+              ),
             ),
-          ),
-        controlsOverlay ?? controls,
+          ?controlsOverlay,
+        ],
+        if (hideOverlayForPictureInPicture)
+          controls
+        else if (controlsOverlay == null)
+          controls,
       ],
     );
 
@@ -379,7 +394,7 @@ class PlayerViewportView extends StatelessWidget {
                 child: IgnorePointer(child: SizedBox.expand(key: videoPaneKey)),
               ),
               // 0. 最底层托底背景（电视大屏使用纯黑底衬，避免彩色漫反射破坏电视背光分区控光与黑位对比度；移动端保留适度毛玻璃）
-              if (!television && !mobile)
+              if (!television && !mobile && !pictureInPictureVisible)
                 DramaBackdrop(
                   drama: detail.drama,
                   repository: repository,
@@ -488,8 +503,10 @@ class PlayerViewportView extends StatelessWidget {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               FilledButton.tonalIcon(
-                                onPressed: () =>
-                                    DiaryService.showDiaryDialog(context),
+                                onPressed: () => DiaryService.showDiaryDialog(
+                                  context,
+                                  fetchDiagnostics: onFetchDiagnostics,
+                                ),
                                 icon: const Icon(Icons.receipt_long_rounded),
                                 label: const Text('查看播放日记'),
                               ),

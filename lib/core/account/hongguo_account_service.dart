@@ -1,3 +1,4 @@
+import 'hongguo_social_models.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -74,7 +75,7 @@ class HongguoAccountService {
         throw const HongguoAccountFailure('账号操作已取消', 'CANCELLED');
       }
       return _runtime = runtime;
-    }();
+    }().whenComplete(() => _initializing = null);
   }
 
   void _check(int revision) {
@@ -86,9 +87,11 @@ class HongguoAccountService {
   Future<({String body, Uri? redirect})> _request(
     Map<String, dynamic> command,
     HongguoAccountCookies? cookies,
-    int revision,
-  ) async {
+    int revision, {
+    String? diagnosticAction,
+  }) async {
     _check(revision);
+    final elapsed = Stopwatch()..start();
     final uri = Uri.parse(command['url'] as String);
     final web =
         uri.scheme == 'https' &&
@@ -147,6 +150,14 @@ class HongguoAccountService {
     }
     if (response.statusCode != 200) {
       await response.drain<void>();
+      _recordCreatorResponse(
+        diagnosticAction,
+        uri,
+        method,
+        response,
+        '',
+        elapsed,
+      );
       throw HongguoAccountFailure(
         '账号请求失败（HTTP ${response.statusCode}）',
         'HTTP_${response.statusCode}',
@@ -163,7 +174,74 @@ class HongguoAccountService {
     if (bytes.isEmpty) {
       throw const HongguoAccountFailure('账号接口返回空正文', 'EMPTY_RESPONSE');
     }
-    return (body: utf8.decode(bytes), redirect: null);
+    final body = utf8.decode(bytes);
+    _recordCreatorResponse(
+      diagnosticAction,
+      uri,
+      method,
+      response,
+      body,
+      elapsed,
+    );
+    return (body: body, redirect: null);
+  }
+
+  void _recordCreatorResponse(
+    String? action,
+    Uri uri,
+    String method,
+    HttpClientResponse response,
+    String body,
+    Stopwatch elapsed,
+  ) {
+    if (action != 'creatorFollow' ||
+        uri.path != '/novel/commentapi/comment/do_action/v1/') {
+      return;
+    }
+    Object? parsed;
+    try {
+      parsed = jsonDecode(body);
+    } catch (_) {}
+    final rawCode = parsed is Map ? parsed['code']?.toString() ?? '' : '';
+    final business = RegExp(r'^-?\d{1,9}$').hasMatch(rawCode) ? rawCode : '';
+    final risk = response.statusCode == 200 && business == '103012';
+    String header(String name) {
+      try {
+        return response.headers.value(name) ?? '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    final logId = header('x-tt-logid');
+    final gatewayLogin = header('x-tt-agw-login');
+    SourceDiagnostics.shared.add(
+      SourceDiagnosticEntry(
+        at: DateTime.now(),
+        context: '红果作者关注',
+        stage: 'creatorFollow',
+        host: uri.host,
+        url: Uri(scheme: uri.scheme, host: uri.host, path: uri.path).toString(),
+        method: method,
+        status: response.statusCode,
+        businessCode: business,
+        errorCode: response.statusCode != 200
+            ? 'HTTP_${response.statusCode}'
+            : business.isEmpty
+            ? 'INVALID_RESPONSE'
+            : business != '0'
+            ? 'BUSINESS_$business'
+            : '',
+        logId: RegExp(r'^[0-9A-Fa-f]{16,64}$').hasMatch(logId) ? logId : '',
+        elapsedMs: elapsed.elapsedMilliseconds,
+        errorCategory: risk ? 'upstream_security' : '',
+        errorTitle: risk ? '红果安全校验未通过' : '',
+        errorMessage: risk ? '官方评论接口返回 HitSharkRule，具体触发条件未提供' : '',
+        sessionStatus:
+            'session=${session.loggedIn} verified=${session.verified} boundDevice=${session.deviceSession != null}'
+            '${{'0', '1'}.contains(gatewayLogin) ? ' gatewayLogin=$gatewayLogin' : ''}',
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> _call(
@@ -186,7 +264,12 @@ class HongguoAccountService {
         });
       }
       phase = 'request';
-      final response = await _request(command, cookies, revision);
+      final response = await _request(
+        command,
+        cookies,
+        revision,
+        diagnosticAction: action,
+      );
       if (response.redirect != null) {
         throw const HongguoAccountFailure('账号接口发生意外跳转', 'UNEXPECTED_REDIRECT');
       }
@@ -269,7 +352,7 @@ class HongguoAccountService {
     SourceDiagnostics.shared.add(
       SourceDiagnosticEntry(
         at: DateTime.now(),
-        context: '红果登录',
+        context: phase == 'creatorFollow' ? '红果作者关注' : '红果登录',
         stage: phase,
         errorCode: code,
         businessCode: businessCode,
@@ -576,6 +659,10 @@ class HongguoAccountService {
       for (final item in result['items'] as List) {
         final row = Map<String, dynamic>.from(item as Map);
         details[row['id'].toString()] = row;
+        final bookId = row['book_id']?.toString() ?? '';
+        if (bookId.isNotEmpty && bookId != row['id'].toString()) {
+          details[bookId] = row;
+        }
       }
     }
     _check(revision);
@@ -686,6 +773,119 @@ class HongguoAccountService {
       null,
       session.revision,
     );
+  }
+
+  Future<List<HongguoCreator>> creators(Drama drama) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final result = await _call(
+      'creatorList',
+      {'id': drama.cleanSourceId},
+      null,
+      session.revision,
+    );
+    return (result['creators'] as List)
+        .map(
+          (row) =>
+              HongguoCreator.fromJson(Map<String, dynamic>.from(row as Map)),
+        )
+        .toList();
+  }
+
+  Future<HongguoSocialSnapshot> social(Drama drama) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    final result = await _call(
+      'socialDetail',
+      {'id': drama.cleanSourceId},
+      null,
+      revision,
+    );
+    if (result['id'] != drama.cleanSourceId) {
+      throw const HongguoAccountFailure('互动状态的剧集编号不匹配');
+    }
+    final episodes = (result['episodes'] as List)
+        .map(
+          (row) => HongguoEpisodeLike.fromJson(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList();
+    List<HongguoCreator> people = [];
+    String? error;
+    try {
+      people = await creators(drama);
+    } on HongguoAccountFailure catch (issue) {
+      error = issue.message;
+    }
+    _check(revision);
+    return HongguoSocialSnapshot(episodes, people, creatorError: error);
+  }
+
+  Future<HongguoSocialSnapshot> setLiked(
+    Drama drama,
+    HongguoEpisodeLike episode,
+    bool liked,
+  ) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    await _call(
+      'likeUpdate',
+      {'itemId': episode.id, 'like': liked ? '1' : '0'},
+      null,
+      revision,
+    );
+    _check(revision);
+    final result = await social(drama);
+    _check(revision);
+    final readback = result.episode(episode.number);
+    if (readback?.id != episode.id || readback?.liked != liked) {
+      throw const HongguoAccountFailure(
+        '官方点赞状态尚未确认，请刷新后重试',
+        'WRITE_NOT_CONFIRMED',
+      );
+    }
+    return result;
+  }
+
+  Future<List<HongguoCreator>> setCreatorFollowing(
+    Drama drama,
+    HongguoCreator creator,
+    bool follow,
+  ) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    if ((!creator.canFollow && follow) ||
+        creator.following == null ||
+        creator.id == session.id) {
+      throw const HongguoAccountFailure('当前创作者暂不可关注');
+    }
+    final revision = session.revision;
+    await _call(
+      'creatorFollow',
+      {
+        'userId': creator.id,
+        'relativeType': creator.relativeType,
+        'follow': follow ? '1' : '0',
+      },
+      null,
+      revision,
+    );
+    _check(revision);
+    final rows = await creators(drama);
+    _check(revision);
+    final row = rows
+        .where(
+          (item) =>
+              item.id == creator.id &&
+              item.relativeType == creator.relativeType,
+        )
+        .firstOrNull;
+    if (row?.following != follow) {
+      throw const HongguoAccountFailure(
+        '官方关注状态尚未确认，请刷新后重试',
+        'WRITE_NOT_CONFIRMED',
+      );
+    }
+    return rows;
   }
 
   void dispose() {

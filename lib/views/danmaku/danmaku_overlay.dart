@@ -53,6 +53,7 @@ List<DanmakuFlight> planDanmaku(
       .where((word) => word.isNotEmpty)
       .toList();
 
+  final maxConcurrent = width > 800 ? 18 : 30;
   for (final item in sorted) {
     if (item.id.isEmpty ||
         item.text.trim().isEmpty ||
@@ -71,7 +72,7 @@ List<DanmakuFlight> planDanmaku(
               (flight) => item.timeMs - flight.item.timeMs < flight.durationMs,
             )
             .length >=
-        40) {
+        maxConcurrent) {
       continue;
     }
     final runes = item.text.runes;
@@ -227,7 +228,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
                         color: AppColors.black.withValues(
                           alpha: opacity * 0.85,
                         ),
-                        blurRadius: 3,
+                        blurRadius: width > 800 ? 0 : 3,
                         offset: const Offset(1, 1),
                       ),
                     ]
