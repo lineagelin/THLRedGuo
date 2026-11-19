@@ -214,8 +214,7 @@ class _MyPageState extends State<MyPage> {
 
   Widget _previews(
     String id,
-    List<Drama> dramas,
-    String Function(Drama) subtitle,
+    List<({Drama drama, String subtitle})> previews,
     void Function(Drama) onTap,
   ) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,19 +222,19 @@ class _MyPageState extends State<MyPage> {
       for (var index = 0; index < 3; index++) ...[
         if (index > 0) const SizedBox(width: 12),
         Expanded(
-          child: index >= dramas.length
+          child: index >= previews.length
               ? const SizedBox.shrink()
               : InkWell(
-                  key: ValueKey('my-$id-${dramas[index].id}'),
+                  key: ValueKey('my-$id-${previews[index].drama.id}'),
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => onTap(dramas[index]),
+                  onTap: () => onTap(previews[index].drama),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       AspectRatio(
                         aspectRatio: 2 / 3,
                         child: DramaCover(
-                          drama: dramas[index],
+                          drama: previews[index].drama,
                           repository: widget.repository,
                           radius: 12,
                           showEpisodeCount: false,
@@ -243,7 +242,7 @@ class _MyPageState extends State<MyPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        dramas[index].title,
+                        previews[index].drama.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -252,7 +251,7 @@ class _MyPageState extends State<MyPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        subtitle(dramas[index]),
+                        previews[index].subtitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
@@ -357,13 +356,15 @@ class _MyPageState extends State<MyPage> {
                   onViewAll: () => _openLibrary(history: false),
                   child: favorites.isEmpty
                       ? const Text('还没有追剧，去发现页收藏喜欢的短剧。')
-                      : _previews(
-                          'favorites',
-                          favorites.take(3).toList(),
-                          (drama) =>
-                              widget.store.following(drama.id)?.label ?? '已收藏',
-                          _openDrama,
-                        ),
+                      : _previews('favorites', [
+                          for (final drama in favorites.take(3))
+                            (
+                              drama: drama,
+                              subtitle:
+                                  widget.store.following(drama.id)?.label ??
+                                  '已收藏',
+                            ),
+                        ], _openDrama),
                 ),
                 _section(
                   id: 'history',
@@ -373,15 +374,14 @@ class _MyPageState extends State<MyPage> {
                   onViewAll: () => _openLibrary(history: true),
                   child: history.isEmpty
                       ? const Text('还没有观看记录。')
-                      : _previews(
-                          'history',
-                          history.take(3).map((entry) => entry.drama).toList(),
-                          (drama) {
-                            final watch = widget.store.watched(drama.id)!;
-                            return '第 ${watch.episode} 集 · ${formatPosition(watch.position)}';
-                          },
-                          _openDrama,
-                        ),
+                      : _previews('history', [
+                          for (final watch in history.take(3))
+                            (
+                              drama: watch.drama,
+                              subtitle:
+                                  '第 ${watch.episode} 集 · ${formatPosition(watch.position)}',
+                            ),
+                        ], _openDrama),
                 ),
                 _section(
                   id: 'downloads',
@@ -407,20 +407,14 @@ class _MyPageState extends State<MyPage> {
                               ? '还没有下载记录。'
                               : '当前用户未开放下载权限。',
                         )
-                      : _previews(
-                          'downloads',
-                          downloads
-                              .take(3)
-                              .map((entry) => entry.drama)
-                              .toList(),
-                          (drama) {
-                            final collection = downloads.firstWhere(
-                              (entry) => entry.drama.id == drama.id,
-                            );
-                            return '已下载 ${collection.completed}/${collection.jobs.length} 集';
-                          },
-                          (_) => _openDownloads(),
-                        ),
+                      : _previews('downloads', [
+                          for (final collection in downloads.take(3))
+                            (
+                              drama: collection.drama,
+                              subtitle:
+                                  '已下载 ${collection.completed}/${collection.jobs.length} 集',
+                            ),
+                        ], (_) => _openDownloads()),
                 ),
               ],
             ),

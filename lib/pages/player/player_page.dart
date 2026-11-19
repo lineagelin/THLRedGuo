@@ -2426,6 +2426,7 @@ class PlayerScreenState extends State<PlayerScreen>
           onTogglePlayback: _togglePlayback,
           onTitle: _openDramaDetail,
           onSpeed: () => _openPanel(PlayerMenuSection.speed),
+          onComments: _detail.drama.source == 'hongguo' ? _openComments : null,
           onMenu: _openQuickMenu,
           onEpisodes: () => _openPanel(PlayerMenuSection.episodes),
           onFullscreen: _rotate,

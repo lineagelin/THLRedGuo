@@ -30,6 +30,7 @@ class PlayerPortraitOverlay extends StatelessWidget {
     required this.onSeek,
     required this.cleanScreen,
     required this.onCleanScreen,
+    this.onComments,
     this.onDownload,
     this.textScale = 1,
     this.fillScreen = false,
@@ -55,6 +56,7 @@ class PlayerPortraitOverlay extends StatelessWidget {
       onFavorite,
       onCleanScreen;
   final VoidCallback? onDownload;
+  final VoidCallback? onComments;
   final ValueChanged<double> onSeek;
 
   @override
@@ -159,6 +161,20 @@ class PlayerPortraitOverlay extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (onComments != null)
+                        IconButton(
+                          key: const ValueKey('portrait-comments'),
+                          tooltip: '评论',
+                          onPressed: enabled ? onComments : null,
+                          icon: CustomPaint(
+                            size: const Size.square(26),
+                            painter: _CommentBubblePainter(
+                              enabled
+                                  ? AppColors.white
+                                  : AppColors.whiteWithAlpha(0.38),
+                            ),
+                          ),
+                        ),
                       IconButton(
                         key: const ValueKey('portrait-menu'),
                         tooltip: '播放菜单',
@@ -332,4 +348,35 @@ class PlayerPortraitOverlay extends StatelessWidget {
       },
     ),
   );
+}
+
+class _CommentBubblePainter extends CustomPainter {
+  const _CommentBubblePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 24, size.height / 24);
+    final bubble = Path()
+      ..fillType = PathFillType.evenOdd
+      ..moveTo(12, 2)
+      ..cubicTo(6.5, 2, 2, 5.9, 2, 10.7)
+      ..cubicTo(2, 15, 5.7, 18.6, 10.5, 19.2)
+      ..quadraticBezierTo(11.2, 19.3, 10.4, 21)
+      ..quadraticBezierTo(10.1, 22, 11.3, 22)
+      ..cubicTo(17.8, 19.7, 22, 15, 22, 10.7)
+      ..cubicTo(22, 5.9, 17.5, 2, 12, 2)
+      ..close();
+    for (final x in [7.5, 12.0, 16.5]) {
+      bubble.addOval(Rect.fromCircle(center: Offset(x, 10.7), radius: 1.3));
+    }
+    canvas.drawPath(bubble, Paint()..color = color);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_CommentBubblePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
