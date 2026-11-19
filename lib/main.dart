@@ -246,6 +246,20 @@ class _AppBootstrapState extends State<AppBootstrap>
   );
 }
 
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+        PointerDeviceKind.unknown,
+      };
+}
+
 class DuanjuApp extends StatelessWidget {
   const DuanjuApp({
     super.key,
@@ -276,6 +290,7 @@ class DuanjuApp extends StatelessWidget {
   );
 
   Widget _application() => MaterialApp(
+    scrollBehavior: const AppScrollBehavior(),
     navigatorObservers: [appRouteObserver],
     navigatorKey: navigatorKey,
     title: appName,

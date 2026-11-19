@@ -44,28 +44,28 @@ abstract final class AppColors {
   // ==========================================
   // 3. 深色主题环境色彩 (Dark Mode Surfaces)
   // ==========================================
-  /// 深色深邃背景（纯正影院级黑底）
-  static const Color darkBackground = Color(0xFF0D0E13);
-  /// 深色主面板/导航底色
-  static const Color darkSurface = Color(0xFF15171F);
+  /// 深色深邃背景（融入淡淡暖橙微调，告别冷黑压抑）
+  static const Color darkBackground = Color(0xFF1F1714);
+  /// 深色主面板/导航底色（暖木炭黑）
+  static const Color darkSurface = Color(0xFF261D19);
   /// 深色卡片/条目表面
-  static const Color darkCard = Color(0xFF1C1F2A);
+  static const Color darkCard = Color(0xFF2E221D);
   /// 深色悬浮/弹窗表面
-  static const Color darkSurfaceHigh = Color(0xFF242836);
+  static const Color darkSurfaceHigh = Color(0xFF382923);
   /// 深色抬升表面
-  static const Color darkSurfaceElevated = Color(0xFF242836);
+  static const Color darkSurfaceElevated = Color(0xFF382923);
   /// 深色高亮微卡片
-  static const Color darkSurfaceHighest = Color(0xFF2D3244);
+  static const Color darkSurfaceHighest = Color(0xFF45322A);
   /// 深色描边与分隔线
-  static const Color darkBorder = Color(0xFF262A38);
+  static const Color darkBorder = Color(0xFF3E2D26);
   /// 深色弱化边框
-  static const Color darkBorderSubtle = Color(0xFF1E212E);
+  static const Color darkBorderSubtle = Color(0xFF30231D);
 
   // ==========================================
   // 4. 浅色主题环境色彩 (Light Mode Surfaces)
   // ==========================================
-  /// 浅色干净浅灰背景
-  static const Color lightBackground = Color(0xFFF6F7FB);
+  /// 浅色干净柔和背景（淡淡暖橙象牙柔白）
+  static const Color lightBackground = Color(0xFFFAF7F2);
   /// 浅色白底表面
   static const Color lightSurface = Color(0xFFFFFFFF);
   /// 浅色卡片
@@ -138,6 +138,22 @@ abstract final class AppColors {
   static const Color playerGestureHudHighlight = Color(0xFFFF9800);
   /// 播放器手势 HUD 次级说明文本
   static const Color playerGestureHudTextSecondary = Color(0xB3FFFFFF);
+  /// 播放器中央主播放按钮毛玻璃深色背景
+  static const Color playerCenterMainBg = Color(0x73000000);
+  /// 播放器中央主播放按钮悬停/高光背景 (融入微弱暖红微光)
+  static const Color playerCenterMainBgHover = Color(0x8A1A0B0E);
+  /// 播放器中央主播放按钮高光微白边框
+  static const Color playerCenterMainBorder = Color(0x40FFFFFF);
+  /// 播放器中央主播放按钮悬停边框
+  static const Color playerCenterMainBorderHover = Color(0x8CFFFFFF);
+  /// 播放器中央切集按钮毛玻璃背景
+  static const Color playerCenterSkipBg = Color(0x4D000000);
+  /// 播放器中央切集按钮悬停背景
+  static const Color playerCenterSkipBgHover = Color(0x6E000000);
+  /// 播放器中央切集按钮边框
+  static const Color playerCenterSkipBorder = Color(0x26FFFFFF);
+  /// 播放器中央切集按钮悬停边框
+  static const Color playerCenterSkipBorderHover = Color(0x66FFFFFF);
 
   // ==========================================
   // 7. 电影大片视觉微光与粒子 (Cinematic Glow & Sparks)
@@ -177,7 +193,7 @@ abstract final class AppColors {
   /// 成功态轻量浅绿背景 (成功绿 15% 透明)
   static const Color successSubtle15 = Color(0x2600C853);
   /// 深色微卡片半透底 (深色最高表面 70% 透明)
-  static const Color darkSurfaceHighest70 = Color(0xB32D3244);
+  static const Color darkSurfaceHighest70 = Color(0xB345322A);
   /// 轻量遮罩纯黑半透底 (纯黑 20% 透明)
   static const Color blackSubtle20 = Color(0x33000000);
 
@@ -234,16 +250,16 @@ abstract final class AppGradients {
     ],
   );
 
-  /// 深色影院级背景纵深氛围微渐变（顶部极暗红晕 -> 纯净影院黑）
+  /// 深色影院级背景纵深氛围微渐变（顶部暖橙微晕 -> 柔和温润暖调黑底）
   static const LinearGradient darkAtmosphere = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0xFF161118),
-      Color(0xFF0D0E13),
-      Color(0xFF0A0B10),
+      Color(0xFF332018),
+      Color(0xFF241814),
+      Color(0xFF1F1714),
     ],
-    stops: [0.0, 0.45, 1.0],
+    stops: [0.0, 0.35, 1.0],
   );
 
   /// 高阶微光立体卡片渐变（顶部透亮光泽 -> 沉稳微暗底色）
@@ -251,18 +267,18 @@ abstract final class AppGradients {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF222736),
-      Color(0xFF181B24),
+      Color(0xFF32241E),
+      Color(0xFF231915),
     ],
   );
 
-  /// 激活卡片微光渐变（融入 10% 品牌红光的暗夜高光卡片）
+  /// 激活卡片微光渐变（融入暖橙微光的暗夜高光卡片）
   static const LinearGradient surfaceActiveCard = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF2E1C24),
-      Color(0xFF1E1720),
+      Color(0xFF42251B),
+      Color(0xFF2C1913),
     ],
   );
 
@@ -321,13 +337,13 @@ abstract final class AppGradients {
     ],
   );
 
-  /// 底部导航栏磨砂渐变底色
+  /// 底部导航栏磨砂渐变底色（暖调暗夜质感）
   static const LinearGradient bottomNavGlass = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0xF215171F),
-      Color(0xFA0D0E13),
+      Color(0xF5261D19),
+      Color(0xFC1C1512),
     ],
   );
 }

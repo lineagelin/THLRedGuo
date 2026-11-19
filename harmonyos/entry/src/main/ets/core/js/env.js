@@ -48,37 +48,42 @@ if (typeof globalThis.btoa === 'undefined') {
 // 4. Safe JSON.parse for large IDs (> 15 digits)
 var nativeParse = JSON.parse;
 JSON.parse = function(text, reviver) {
-  if (typeof text === 'string' && /\d{15,}/.test(text)) {
-    var output = '';
-    var copied = 0;
-    var quoted = false;
-    var escaped = false;
-    var numberCharacters = '0123456789.eE+-';
-    for (var index = 0; index < text.length; index++) {
-      var character = text[index];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (character === '\\') escaped = true;
-        else if (character === '"') quoted = false;
-        continue;
+  try {
+    if (typeof text === 'string' && /\d{15,}/.test(text)) {
+      var output = '';
+      var copied = 0;
+      var quoted = false;
+      var escaped = false;
+      var numberCharacters = '0123456789.eE+-';
+      for (var index = 0; index < text.length; index++) {
+        var character = text[index];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (character === '\\') escaped = true;
+          else if (character === '"') quoted = false;
+          continue;
+        }
+        if (character === '"') {
+          quoted = true;
+          continue;
+        }
+        if (character !== '-' && (character < '0' || character > '9')) continue;
+        var start = index;
+        while (index < text.length && numberCharacters.indexOf(text[index]) >= 0) index++;
+        var token = text.slice(start, index);
+        if (/^-?[1-9]\d{14,}$/.test(token)) {
+          output += text.slice(copied, start) + '"' + token + '"';
+          copied = index;
+        }
+        index--;
       }
-      if (character === '"') {
-        quoted = true;
-        continue;
-      }
-      if (character !== '-' && (character < '0' || character > '9')) continue;
-      var start = index;
-      while (index < text.length && numberCharacters.indexOf(text[index]) >= 0) index++;
-      var token = text.slice(start, index);
-      if (/^-?[1-9]\d{14,}$/.test(token)) {
-        output += text.slice(copied, start) + '"' + token + '"';
-        copied = index;
-      }
-      index--;
+      if (copied > 0) text = output + text.slice(copied);
     }
-    if (copied > 0) text = output + text.slice(copied);
+    return nativeParse(text, reviver);
+  } catch (err) {
+    hilog.error(0x0000, 'HongGuoEnv', 'JSON.parse FAILED: %{public}s, len=%{public}d, snippet: %{public}s', err.message, text ? text.length : 0, text ? String(text).slice(0, 300) : '');
+    throw err;
   }
-  return nativeParse(text, reviver);
 };
 
 // 5. Native fetch using @ohos.net.http
@@ -98,8 +103,9 @@ globalThis.fetch = function(url, options) {
       method: httpMethod,
       header: headers,
       extraData: body,
-      readTimeout: options.timeoutMs || 25000,
-      connectTimeout: 12000
+      expectDataType: http.HttpDataType.STRING,
+      readTimeout: Math.max(options.timeoutMs || 25000, 10000),
+      connectTimeout: 10000
     }, function(err, data) {
       if (err) {
         try { req.destroy(); } catch (_) {}
@@ -145,19 +151,29 @@ globalThis.fetch = function(url, options) {
       var resultStr = '';
       if (typeof data.result === 'string') {
         resultStr = data.result;
-      } else if (data.result instanceof ArrayBuffer) {
-        var u8 = new Uint8Array(data.result);
-        var s = '';
-        for (var i = 0; i < u8.length; i++) {
-          s += String.fromCharCode(u8[i]);
-        }
-        try {
-          resultStr = decodeURIComponent(escape(s));
-        } catch (_) {
-          resultStr = s;
+      } else if (typeof data.result === 'object' && data.result !== null) {
+        if (data.result instanceof ArrayBuffer) {
+          var u8 = new Uint8Array(data.result);
+          var s = '';
+          for (var i = 0; i < u8.length; i++) {
+            s += String.fromCharCode(u8[i]);
+          }
+          try {
+            resultStr = decodeURIComponent(escape(s));
+          } catch (_) {
+            resultStr = s;
+          }
+        } else {
+          try {
+            resultStr = JSON.stringify(data.result);
+          } catch (_) {
+            resultStr = '';
+          }
         }
       }
       try { req.destroy(); } catch (_) {}
+
+      hilog.info(0x0000, 'HongGuoFetch', 'Fetch %{public}s %{public}s -> status %{public}d, bodyLen=%{public}d, preview=%{public}s', method, url.slice(0, 100), respCode, resultStr.length, resultStr.slice(0, 150));
 
       var responseObj = {
         status: respCode,
@@ -171,6 +187,7 @@ globalThis.fetch = function(url, options) {
             }
             return '';
           },
+          'content-type': respHeaders['content-type'] || respHeaders['Content-Type'] || (httpMethod === http.RequestMethod.HEAD ? 'video/mp4' : ''),
           ...respHeaders
         },
         body: resultStr,
@@ -179,6 +196,9 @@ globalThis.fetch = function(url, options) {
         },
         json: function() {
           try {
+            if (typeof data.result === 'object' && data.result !== null && !(data.result instanceof ArrayBuffer)) {
+              return Promise.resolve(data.result);
+            }
             return Promise.resolve(JSON.parse(resultStr));
           } catch (parseErr) {
             return Promise.reject(parseErr);

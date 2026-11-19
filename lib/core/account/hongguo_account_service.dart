@@ -1,3 +1,4 @@
+import 'hongguo_collection_models.dart';
 import 'hongguo_social_models.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -9,6 +10,7 @@ import 'hongguo_account_session.dart';
 import 'account_transfer_payload.dart';
 import 'hongguo_verification.dart';
 import '../../models/catalog/models.dart';
+import '../../models/comment/comment_model.dart';
 
 class HongguoQrLogin {
   HongguoQrLogin(
@@ -25,7 +27,8 @@ class HongguoQrLogin {
   final int _revision;
   bool cancelled = false;
   bool finalCheckDone = false;
-  bool get confirmed => _cookies.hasSession;
+  bool statusConfirmed = false;
+  bool get confirmed => statusConfirmed || _cookies.hasSession;
 }
 
 class HongguoPhoneLogin {
@@ -409,6 +412,9 @@ class HongguoAccountService {
       if (status == 'cancelled') {
         throw const HongguoAccountFailure('手机已取消登录，请刷新二维码', 'CANCELLED');
       }
+      if (status == 'confirmed' || status == '3') {
+        login.statusConfirmed = true;
+      }
       var redirect = status == 'confirmed' || status == '3'
           ? data['redirect'] as String
           : '';
@@ -416,7 +422,8 @@ class HongguoAccountService {
       for (var step = 0; redirect.isNotEmpty && step < 5; step++) {
         final uri = Uri.parse('https://hongguoduanju.com/').resolve(redirect);
         if (uri.scheme != 'https' ||
-            uri.host != 'hongguoduanju.com' ||
+            (!uri.host.endsWith('hongguoduanju.com') &&
+                !uri.host.endsWith('snssdk.com')) ||
             uri.hasPort) {
           throw const HongguoAccountFailure('登录确认地址未通过校验');
         }
@@ -428,8 +435,18 @@ class HongguoAccountService {
         redirect = response.redirect?.toString() ?? '';
       }
       if (redirect.isNotEmpty) throw const HongguoAccountFailure('登录确认跳转次数过多');
-      if (!login._cookies.hasSession) return false;
-      await _call('webInfo', {}, login._cookies, login._revision);
+      if (!login._cookies.hasSession) {
+        if (!login.confirmed &&
+            !login.expiresAt.isAfter(
+              DateTime.now().subtract(const Duration(seconds: 30)),
+            )) {
+          throw const HongguoAccountFailure('二维码已过期，请刷新', 'QR_EXPIRED');
+        }
+        return false;
+      }
+      try {
+        await _call('webInfo', {}, login._cookies, login._revision);
+      } catch (_) {}
       final profile = await _call(
         'profile',
         {},
@@ -636,6 +653,99 @@ class HongguoAccountService {
     session.confirm(account, revision);
   }
 
+  String _pickNonEmptyText(Iterable<Object?> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  int _pickPositiveInt(Iterable<Object?> values) {
+    for (final value in values) {
+      final parsed = intValue(value);
+      if (parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  void _indexDetailRow(
+    Map<String, Map<String, dynamic>> details,
+    Map<String, dynamic> incoming,
+  ) {
+    final keys = <String>{
+      for (final key in ['id', 'book_id', 'series_id'])
+        if ((incoming[key]?.toString().trim() ?? '').isNotEmpty)
+          incoming[key].toString().trim(),
+    };
+    for (final key in keys) {
+      final existing = details[key];
+      if (existing == null) {
+        details[key] = incoming;
+      } else {
+        details[key] = {
+          ...existing,
+          ...incoming,
+          'title': _pickNonEmptyText([incoming['title'], existing['title']]),
+          'cover': _pickNonEmptyText([incoming['cover'], existing['cover']]),
+          'description': _pickNonEmptyText([
+            incoming['description'],
+            existing['description'],
+          ]),
+          'episodes': _pickPositiveInt([
+            incoming['episodes'],
+            existing['episodes'],
+          ]),
+        };
+      }
+    }
+  }
+
+  Map<String, dynamic>? _resolveDetailForRow(
+    Map<String, Map<String, dynamic>> details,
+    Map<String, dynamic> row,
+  ) {
+    for (final key in [row['id'], row['book_id'], row['series_id']]) {
+      final id = key?.toString().trim() ?? '';
+      if (id.isNotEmpty && details.containsKey(id)) {
+        return details[id];
+      }
+    }
+    return null;
+  }
+
+  bool _isFatalAccountFailure(HongguoAccountFailure failure, int revision) {
+    return !session.loggedIn ||
+        revision != session.revision ||
+        failure.code == 'CANCELLED' ||
+        failure.code == 'SESSION_INVALID' ||
+        failure.code == 'ACCOUNT_CHALLENGE_REQUIRED' ||
+        failure.code == 'ACCOUNT_SECONDARY_VERIFICATION_REQUIRED';
+  }
+
+  void _recordLibraryDiagnostic({
+    required String stage,
+    required int total,
+    int resolved = 0,
+    int fallbackCount = 0,
+    String errorCode = '',
+    String message = '',
+  }) {
+    SourceDiagnostics.shared.add(
+      SourceDiagnosticEntry(
+        at: DateTime.now(),
+        context: '红果账号列表补全',
+        stage: stage,
+        errorCode: errorCode,
+        errorTitle: errorCode.isNotEmpty ? '批量剧集资料未完整匹配' : '',
+        errorMessage: message.isNotEmpty
+            ? message
+            : '总数=$total, 详情匹配=$resolved, 单条补全=$fallbackCount',
+        sessionStatus: 'loggedIn=${session.loggedIn}',
+      ),
+    );
+  }
+
   Future<List<WatchEntry>> library({required bool history}) async {
     if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
     final revision = session.revision;
@@ -649,38 +759,119 @@ class HongguoAccountService {
         .map((v) => Map<String, dynamic>.from(v as Map))
         .toList();
     final details = <String, Map<String, dynamic>>{};
+    var batchErrorCode = '';
     for (var offset = 0; offset < rows.length; offset += 50) {
-      final result = await _call(
-        'libraryDetails',
-        {'ids': rows.skip(offset).take(50).map((v) => v['id']).join(',')},
-        null,
-        revision,
-      );
-      for (final item in result['items'] as List) {
-        final row = Map<String, dynamic>.from(item as Map);
-        details[row['id'].toString()] = row;
-        final bookId = row['book_id']?.toString() ?? '';
-        if (bookId.isNotEmpty && bookId != row['id'].toString()) {
-          details[bookId] = row;
+      final chunkIds = rows
+          .skip(offset)
+          .take(50)
+          .map((v) => v['id'].toString())
+          .where((v) => v.isNotEmpty)
+          .join(',');
+      if (chunkIds.isEmpty) continue;
+      try {
+        final result = await _call(
+          'libraryDetails',
+          {'ids': chunkIds},
+          null,
+          revision,
+        );
+        for (final item in result['items'] as List) {
+          _indexDetailRow(details, Map<String, dynamic>.from(item as Map));
         }
+      } on HongguoAccountFailure catch (failure) {
+        if (_isFatalAccountFailure(failure, revision)) rethrow;
+        batchErrorCode = failure.code;
+      } catch (_) {
+        _check(revision);
+        batchErrorCode = 'BATCH_DETAIL_FAILED';
       }
     }
+
+    final missingIndices = <int>[];
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final detail = _resolveDetailForRow(details, row);
+      final title = _pickNonEmptyText([detail?['title'], row['title']]);
+      final cover = _pickNonEmptyText([detail?['cover'], row['cover']]);
+      final episodes = _pickPositiveInt([detail?['episodes'], row['episodes']]);
+      if (title.isEmpty || cover.isEmpty || episodes <= 0) {
+        missingIndices.add(i);
+      }
+    }
+
+    var fallbackSucceeded = 0;
+    const maxFallbackItems = 24;
+    const concurrency = 4;
+    final fallbackTargets = missingIndices.take(maxFallbackItems).toList();
+    for (var start = 0; start < fallbackTargets.length; start += concurrency) {
+      final batch = fallbackTargets.skip(start).take(concurrency).toList();
+      await Future.wait(
+        batch.map((index) async {
+          final row = rows[index];
+          final candidates = <String>[
+            for (final key in ['series_id', 'id', 'book_id'])
+              if ((row[key]?.toString().trim() ?? '').isNotEmpty)
+                row[key].toString().trim(),
+          ];
+          final seenCandidates = <String>{};
+          for (final candidate in candidates) {
+            if (!seenCandidates.add(candidate)) continue;
+            try {
+              final single = await _call(
+                'libraryDetail',
+                {'id': candidate},
+                null,
+                revision,
+              );
+              final items = single['items'] as List? ?? const [];
+              if (items.isNotEmpty) {
+                final rawDetail = Map<String, dynamic>.from(items.first as Map);
+                rawDetail.putIfAbsent('id', () => row['id']);
+                rawDetail.putIfAbsent('series_id', () => candidate);
+                if ((row['book_id']?.toString() ?? '').isNotEmpty) {
+                  rawDetail.putIfAbsent('book_id', () => row['book_id']);
+                }
+                _indexDetailRow(details, rawDetail);
+                final title = _pickNonEmptyText([rawDetail['title']]);
+                final cover = _pickNonEmptyText([rawDetail['cover']]);
+                final episodes = _pickPositiveInt([rawDetail['episodes']]);
+                if (title.isNotEmpty || cover.isNotEmpty || episodes > 0) {
+                  fallbackSucceeded++;
+                  break;
+                }
+              }
+            } on HongguoAccountFailure catch (failure) {
+              if (_isFatalAccountFailure(failure, revision)) rethrow;
+            } catch (_) {
+              _check(revision);
+            }
+          }
+        }),
+      );
+    }
+
     _check(revision);
-    return rows.map((row) {
-      final detail = details[row['id'].toString()] ?? row;
+    var resolvedCount = 0;
+    final entries = rows.map((row) {
+      final detail = _resolveDetailForRow(details, row);
       final id = row['id'].toString();
-      final title = detail['title']?.toString() ?? '';
+      final title = _pickNonEmptyText([detail?['title'], row['title']]);
+      final cover = _pickNonEmptyText([detail?['cover'], row['cover']]);
+      final description = _pickNonEmptyText([
+        detail?['description'],
+        row['description'],
+      ]);
+      final episodes = _pickPositiveInt([detail?['episodes'], row['episodes']]);
+      if (title.isNotEmpty) resolvedCount++;
       return WatchEntry(
         drama: Drama(
           id: 'hongguo:$id',
           source: 'hongguo',
           sourceId: id,
           title: title.isEmpty ? '剧集$id' : title,
-          cover: detail['cover']?.toString() ?? '',
-          description: detail['description']?.toString() ?? '',
-          episodes: intValue(detail['episodes']) > 0
-              ? intValue(detail['episodes'])
-              : intValue(row['episodes']),
+          cover: cover,
+          description: description,
+          episodes: episodes,
         ),
         episode: intValue(row['episode']),
         position: (row['positionMs'] as num? ?? 0) / 1000,
@@ -690,6 +881,18 @@ class HongguoAccountService {
         ),
       );
     }).toList();
+
+    if (rows.isNotEmpty &&
+        (batchErrorCode.isNotEmpty || missingIndices.isNotEmpty)) {
+      _recordLibraryDiagnostic(
+        stage: history ? 'history' : 'favorites',
+        total: rows.length,
+        resolved: resolvedCount,
+        fallbackCount: fallbackSucceeded,
+        errorCode: batchErrorCode,
+      );
+    }
+    return entries;
   }
 
   Future<void> setFollowing(Drama drama, bool follow) async {
@@ -773,6 +976,221 @@ class HongguoAccountService {
       null,
       session.revision,
     );
+  }
+
+  Future<Anchor> creatorProfile(String userId) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    final result = await _call(
+      'creatorProfile',
+      {'userId': userId},
+      null,
+      revision,
+    );
+    _check(revision);
+    final row = Map<String, dynamic>.from(result['creator'] as Map);
+    if (row['id'] != userId && row['businessId'] != userId) {
+      throw const HongguoAccountFailure('主播资料编号不匹配', 'INVALID_RESPONSE');
+    }
+    return Anchor.fromOfficial(row);
+  }
+
+  Future<
+    ({
+      List<Drama> items,
+      bool hasMore,
+      String nextCursor,
+      int commentSource,
+      int tabType,
+    })
+  >
+  creatorWorks(
+    String userId, {
+    String cursor = '',
+    int count = 20,
+    int commentSource = 1506,
+    int tabType = 23,
+  }) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    Future<({List<Drama> items, bool hasMore, String nextCursor})> fetch(
+      int source,
+      int tab,
+    ) async {
+      final result = await _call(
+        'creatorWorks',
+        {
+          'userId': userId,
+          'cursor': cursor,
+          'count': count,
+          'commentSource': source,
+          'tabType': tab,
+        },
+        null,
+        revision,
+      );
+      _check(revision);
+      final rows = (result['items'] as List?) ?? const [];
+      final dramas = <Drama>[];
+      for (final raw in rows) {
+        if (raw is! Map) continue;
+        final row = Map<String, dynamic>.from(raw);
+        final sid = row['id']?.toString() ?? '';
+        final title = row['title']?.toString() ?? '';
+        if (sid.isEmpty || title.isEmpty) continue;
+        final rawTags = (row['tags'] as List?) ?? const [];
+        dramas.add(
+          Drama(
+            id: 'hongguo:$sid',
+            source: 'hongguo',
+            sourceId: sid,
+            title: title,
+            cover: row['cover']?.toString() ?? '',
+            description: row['description']?.toString() ?? '',
+            episodes: (row['episodes'] as num?)?.toInt() ?? 0,
+            tags: rawTags.map((e) => e.toString()).where((e) => e.isNotEmpty).toList(),
+          ),
+        );
+      }
+      return (
+        items: dramas,
+        hasMore: result['hasMore'] == true,
+        nextCursor: result['nextCursor']?.toString() ?? '',
+      );
+    }
+
+    final primary = await fetch(commentSource, tabType);
+    if (primary.items.isNotEmpty ||
+        cursor.isNotEmpty ||
+        (commentSource == 1504 && tabType == 1)) {
+      return (
+        items: primary.items,
+        hasMore: primary.hasMore,
+        nextCursor: primary.nextCursor,
+        commentSource: commentSource,
+        tabType: tabType,
+      );
+    }
+    try {
+      final fallback = await fetch(1504, 1);
+      if (fallback.items.isNotEmpty) {
+        return (
+          items: fallback.items,
+          hasMore: fallback.hasMore,
+          nextCursor: fallback.nextCursor,
+          commentSource: 1504,
+          tabType: 1,
+        );
+      }
+    } catch (_) {}
+    return (
+      items: primary.items,
+      hasMore: primary.hasMore,
+      nextCursor: primary.nextCursor,
+      commentSource: commentSource,
+      tabType: tabType,
+    );
+  }
+
+  ({int revision, String id})? _collectionIdentity;
+
+  Future<HongguoCollectionPage<Anchor>> followingCreators({
+    int offset = 0,
+    int count = 20,
+    int douyinOffset = 0,
+    int? relativeType,
+  }) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    if (_collectionIdentity?.revision != revision) {
+      var targetId = session.id;
+      try {
+        final profile = await creatorProfile(targetId);
+        if (profile.id.isNotEmpty) targetId = profile.id;
+      } catch (_) {}
+      _check(revision);
+      _collectionIdentity = (revision: revision, id: targetId);
+    }
+    final userId = _collectionIdentity?.id ?? session.id;
+    final payload = <String, dynamic>{
+      'userId': userId,
+      'offset': offset,
+      'count': count,
+    };
+    if (relativeType != null) {
+      payload['relativeType'] = relativeType;
+    }
+    final result = await _call(
+      'followingCreators',
+      payload,
+      null,
+      revision,
+    );
+    _check(revision);
+    final creatorsList = (result['creators'] as List?) ?? const [];
+    return HongguoCollectionPage(
+      creatorsList
+          .map((r) => Anchor.fromOfficial(Map<String, dynamic>.from(r as Map)))
+          .toList(),
+      hasMore: result['hasMore'] == true,
+      nextOffset: (result['nextOffset'] as num?)?.toInt(),
+      followingDouyinOffset:
+          (result['followingDouyinNextOffset'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<HongguoCollectionPage<HongguoLikedVideo>> likedVideos({
+    int offset = 0,
+    int count = 20,
+  }) async {
+    if (!session.loggedIn) throw const HongguoAccountFailure('请先登录红果账号');
+    final revision = session.revision;
+    final result = await _call(
+      'likedVideos',
+      {'offset': offset, 'count': count},
+      null,
+      revision,
+    );
+    _check(revision);
+    return HongguoCollectionPage(
+      (result['items'] as List)
+          .map(
+            (r) =>
+                HongguoLikedVideo.fromJson(Map<String, dynamic>.from(r as Map)),
+          )
+          .toList(),
+      hasMore: result['hasMore'] == true,
+      nextOffset: (result['nextOffset'] as num?)?.toInt(),
+      unsupportedCount: (result['unsupportedCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<Anchor> setProfileFollowing(Anchor anchor, bool follow) async {
+    final revision = session.revision;
+    final current = await creatorProfile(anchor.id);
+    _check(revision);
+    if (current.officialFollowing == null || follow && !current.canFollow) {
+      throw const HongguoAccountFailure('当前主播暂不可关注');
+    }
+    await _call(
+      'creatorFollow',
+      {
+        'userId': current.id,
+        'relativeType': current.relativeType,
+        'follow': follow ? '1' : '0',
+      },
+      null,
+      revision,
+    );
+    final confirmed = await creatorProfile(current.id);
+    _check(revision);
+    if (confirmed.officialFollowing != follow) {
+      throw const HongguoAccountFailure(
+        '官方关注状态尚未确认，请刷新后重试',
+        'WRITE_NOT_CONFIRMED',
+      );
+    }
+    return confirmed;
   }
 
   Future<List<HongguoCreator>> creators(Drama drama) async {
@@ -886,6 +1304,52 @@ class HongguoAccountService {
       );
     }
     return rows;
+  }
+
+  Future<CommentPage> fetchCommentList({
+    required String bookId,
+    String cursor = '',
+    int count = 20,
+  }) async {
+    final cleanId = bookId.replaceFirst('hongguo:', '');
+    final revision = session.revision;
+    final payload = <String, dynamic>{
+      'bookId': cleanId,
+      'cursor': cursor,
+      'count': count,
+    };
+    final result = await _call(
+      'commentList',
+      payload,
+      null,
+      revision,
+    );
+    _check(revision);
+    return CommentPage.fromJson(result);
+  }
+
+  Future<CommentReplyPage> fetchCommentReplyList({
+    required String commentId,
+    required String bookId,
+    String cursor = '',
+    int count = 20,
+  }) async {
+    final cleanId = bookId.replaceFirst('hongguo:', '');
+    final revision = session.revision;
+    final payload = <String, dynamic>{
+      'commentId': commentId,
+      'bookId': cleanId,
+      'cursor': cursor,
+      'count': count,
+    };
+    final result = await _call(
+      'commentReplyList',
+      payload,
+      null,
+      revision,
+    );
+    _check(revision);
+    return CommentReplyPage.fromJson(result);
   }
 
   void dispose() {

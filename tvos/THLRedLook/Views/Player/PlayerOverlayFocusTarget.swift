@@ -20,4 +20,6 @@ public enum PlayerOverlayFocusTarget: Hashable {
     case refreshFeed
     case social
     case pip
+    case like
+    case commentDrawer
 }

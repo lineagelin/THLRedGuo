@@ -72,12 +72,12 @@ class HomeAppBarView extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: tab == 4 ? Colors.transparent : null,
+      backgroundColor: Colors.transparent,
       foregroundColor: tab == 4 ? Colors.white : null,
       surfaceTintColor: tab == 4 ? Colors.transparent : null,
       forceMaterialTransparency: tab == 4,
-      elevation: tab == 4 ? 0 : null,
-      scrolledUnderElevation: tab == 4 ? 0 : null,
+      elevation: 0,
+      scrolledUnderElevation: 0,
       toolbarHeight: television ? 64 : null,
       titleSpacing: 12,
       title: selectionMode

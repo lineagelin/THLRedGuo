@@ -90,6 +90,7 @@ final class HongguoAccountTransport: @unchecked Sendable {
         do {
             result = try await NativeBridge.shared.accountParse(action, body: body)
         } catch {
+            NSLog("[Account] parse failed for action=%@ error=%@ bodyPreview=%@", action, String(describing: error), String(body.prefix(300)))
             trace(phase: action, error: error, existing: existing, account: account, cookies: cookies)
             throw error
         }
@@ -133,14 +134,27 @@ final class HongguoAccountTransport: @unchecked Sendable {
         let active = candidateCookies?.values ?? (existing ? account?.cookies ?? [] : cookies)
         let vault = HongguoAccountVault.shared
         if web {
-            let matched = active.filter { $0.valid && (url.path == $0.path || url.path.hasPrefix($0.path.hasSuffix("/") ? $0.path : $0.path + "/")) }
-            request.setValue(matched.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
+            let host = (url.host ?? "").lowercased()
+            let matched = active.filter { cookie in
+                guard cookie.valid else { return false }
+                let cd = cookie.domain.lowercased()
+                let cleanDomain = cd.hasPrefix(".") ? String(cd.dropFirst()) : cd
+                let domainMatch = cleanDomain == host || host.hasSuffix("." + cleanDomain)
+                let pathMatch = url.path == cookie.path || url.path.hasPrefix(cookie.path.hasSuffix("/") ? cookie.path : cookie.path + "/")
+                return domainMatch && pathMatch
+            }
+            if !matched.isEmpty {
+                request.setValue(matched.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie")
+            }
             if let csrf = matched.first(where: { $0.name == "passport_csrf_token" && !$0.value.isEmpty }) ?? matched.first(where: { $0.name == "passport_csrf_token_default" && !$0.value.isEmpty }) {
                 request.setValue(csrf.value, forHTTPHeaderField: "x-tt-passport-csrf-token")
             }
         } else {
             let record = HongguoAccountRecord(id: "", nickname: "", cookies: active)
-            request.setValue(vault.header(for: url, record: record), forHTTPHeaderField: "Cookie")
+            let cookieHeader = vault.header(for: url, record: record)
+            if !cookieHeader.isEmpty {
+                request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+            }
         }
         let session = transport ?? URLSession(configuration: .ephemeral, delegate: HongguoLoginRedirectDelegate(), delegateQueue: nil)
         let (data, raw) = try await session.data(for: request)
@@ -181,7 +195,7 @@ final class HongguoAccountTransport: @unchecked Sendable {
             var updated = candidateCookies?.values ?? cookies
             for cookie in HTTPCookie.cookies(withResponseHeaderFields: fields, for: url) {
                 let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
-                guard domain == "hongguoduanju.com" else { continue }
+                guard HongguoCookie.isValidDomain(domain) else { continue }
                 updated.removeAll { $0.name == cookie.name && $0.domain == domain && $0.path == cookie.path }
                 let value = HongguoCookie(name: cookie.name, value: cookie.value, domain: domain, path: cookie.path, expires: cookie.expiresDate)
                 if value.valid { updated.append(value) }
@@ -192,7 +206,7 @@ final class HongguoAccountTransport: @unchecked Sendable {
             return ("redirect:" + next, returnedCookies)
         }
         guard response.statusCode == 200 else { throw HongguoAccountError.server(response.statusCode) }
-        guard !data.isEmpty, let body = String(data: data, encoding: .utf8) else { throw HongguoAccountError.invalid }
+        let body = String(data: data, encoding: .utf8) ?? ""
         return (body, returnedCookies)
     }
 
@@ -202,17 +216,24 @@ final class HongguoAccountTransport: @unchecked Sendable {
         attempt: Int,
         account: HongguoAccountRecord?,
         cookies: [HongguoCookie]
-    ) async throws {
+    ) async throws -> [HongguoCookie] {
         var next = value
+        var currentCookies = cookies
         for _ in 0..<5 {
             guard let url = URL(string: next, relativeTo: URL(string: "https://hongguoduanju.com/"))?.absoluteURL,
-                  url.scheme == "https", url.host == "hongguoduanju.com", url.port == nil else {
-                throw HongguoAccountError.invalid
+                  url.scheme == "https",
+                  let host = url.host,
+                  HongguoCookie.isValidDomain(host),
+                  url.port == nil else {
+                return currentCookies
             }
-            let (body, _) = try await request(url, headers: [:], owner: owner, attempt: attempt, account: account, cookies: cookies)
-            if !body.hasPrefix("redirect:") { return }
+            guard let (body, newCookies) = try? await request(url, headers: [:], owner: owner, attempt: attempt, account: account, cookies: currentCookies) else {
+                return currentCookies
+            }
+            if let newCookies { currentCookies = newCookies }
+            if !body.hasPrefix("redirect:") { return currentCookies }
             next = String(body.dropFirst(9))
         }
-        throw HongguoAccountError.invalid
+        return currentCookies
     }
 }

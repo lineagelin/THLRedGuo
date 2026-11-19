@@ -516,9 +516,10 @@ void main() {
     final previous = VideoPlayerPlatform.instance;
     final platform = _VideoPlatform();
     VideoPlayerPlatform.instance = platform;
-    final player = LunaExoPlayer();
+    late LunaExoPlayer player;
     try {
       await tester.runAsync(() async {
+        player = LunaExoPlayer();
         await player.setVolume(23);
         await player.open(Media('file:///C:/gesture-test-1.mp4'), play: false);
         expect(platform.volumes.last, .23);

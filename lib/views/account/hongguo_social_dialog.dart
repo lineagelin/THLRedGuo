@@ -1,24 +1,227 @@
 import 'package:flutter/material.dart';
 import '../../core/account/hongguo_account_social.dart';
-import '../../core/account/hongguo_account_session.dart';
+import '../../core/bridge/core_bridge.dart';
+import '../../core/store/local_store.dart';
 import '../../models/catalog/models.dart';
+import '../../pages/anchor/anchor_detail_page.dart';
+import '../../utils/theme/app_colors.dart';
 
 class HongguoSocialButton extends StatelessWidget {
-  const HongguoSocialButton({super.key, required this.drama, this.episode = 1});
+  const HongguoSocialButton({
+    super.key,
+    required this.drama,
+    this.repository,
+    this.store,
+    this.episode = 1,
+    this.onOpenDrama,
+    this.likeOnly = false,
+    this.anchorOnly = false,
+  });
   final Drama drama;
+  final AppRepository? repository;
+  final LocalStore? store;
   final int episode;
+  final ValueChanged<Drama>? onOpenDrama;
+  final bool likeOnly;
+  final bool anchorOnly;
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: HongguoAccountSocial.shared,
-    builder: (context, _) =>
-        drama.source == 'hongguo' && HongguoAccountSocial.shared.active
-        ? TextButton.icon(
-            key: const ValueKey('account-social-open'),
-            onPressed: () => showHongguoSocialDialog(context, drama, episode),
-            icon: const Icon(Icons.favorite_border, size: 18),
-            label: const Text('点赞与关注'),
-          )
-        : const SizedBox.shrink(),
+    animation: Listenable.merge([
+      HongguoAccountSocial.shared,
+      ?store,
+    ]),
+    builder: (context, _) {
+      final theme = Theme.of(context);
+      final scheme = theme.colorScheme;
+      final isDark = theme.brightness == Brightness.dark;
+
+      final model = HongguoAccountSocial.shared;
+      if (!model.active) {
+        return const SizedBox.shrink();
+      }
+      final data = model.snapshot(drama);
+      final like = data?.episode(episode);
+      final isLiked = like?.liked ?? false;
+      final creator = data?.creators.firstOrNull;
+
+      final Anchor? anchor = creator != null
+          ? Anchor(
+              id: creator.id,
+              name: creator.name,
+              isFollowed: creator.following == true,
+              officialFollowing: creator.following,
+              canFollow: creator.canFollow,
+              relativeType: creator.relativeType,
+            )
+          : null;
+
+      final likeBtn = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey('account-social-like-btn'),
+          onTap: () {
+            if (like != null) {
+              model.like(drama, like, !isLiked);
+            }
+          },
+          borderRadius: BorderRadius.circular(14),
+          child: Ink(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: isLiked
+                  ? AppColors.hongguoRed.withValues(alpha: 0.16)
+                  : (isDark
+                      ? const Color(0x14FFFFFF)
+                      : scheme.surfaceContainerHighest.withValues(alpha: 0.8)),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isLiked
+                    ? AppColors.hongguoRed.withValues(alpha: 0.5)
+                    : (isDark
+                        ? const Color(0x26FFFFFF)
+                        : scheme.outlineVariant.withValues(alpha: 0.5)),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: 14,
+                  color: isLiked
+                      ? AppColors.hongguoRed
+                      : (isDark ? Colors.white70 : scheme.onSurfaceVariant),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isLiked
+                      ? (like != null && like.count > 0
+                          ? '已赞 ${like.count}'
+                          : '已赞')
+                      : (like != null && like.count > 0
+                          ? '点赞 ${like.count}'
+                          : '点赞'),
+                  style: TextStyle(
+                    color: isLiked
+                        ? AppColors.hongguoRed
+                        : (isDark ? Colors.white : scheme.onSurface),
+                    fontSize: 11.5,
+                    fontWeight: isLiked ? FontWeight.w700 : FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      Widget? anchorEntry;
+      if (anchor != null) {
+        final anchorAvatarUri = Uri.tryParse(anchor.avatar);
+        final hasAnchorAvatar =
+            !const bool.fromEnvironment('DISABLE_REMOTE_IMAGES') &&
+            anchorAvatarUri != null &&
+            (anchorAvatarUri.scheme == 'https' ||
+                anchorAvatarUri.scheme == 'http');
+        final anchorAvatarImage =
+            hasAnchorAvatar ? NetworkImage(anchor.avatar) : null;
+
+        anchorEntry = Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const ValueKey('detail-anchor-entry'),
+            borderRadius: BorderRadius.circular(13),
+            onTap: () {
+              if (repository != null && store != null) {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AnchorDetailPage(
+                      anchor: anchor,
+                      repository: repository!,
+                      store: store!,
+                      initialDramas: [drama],
+                      onOpenDrama: onOpenDrama,
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              height: 26,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0x14FFFFFF)
+                    : scheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0x1AFFFFFF)
+                      : scheme.outlineVariant.withValues(alpha: 0.5),
+                  width: 0.6,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 8,
+                    backgroundColor: AppColors.hongguoRed.withValues(alpha: 0.2),
+                    foregroundImage: anchorAvatarImage,
+                    onForegroundImageError: anchorAvatarImage == null
+                        ? null
+                        : (_, _) {},
+                    child: const Icon(
+                      Icons.person,
+                      size: 11,
+                      color: AppColors.hongguoRed,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '主播 · ${anchor.name}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      color: isDark ? Colors.white : scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 14,
+                    color: isDark ? Colors.white54 : scheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (likeOnly) {
+        return likeBtn;
+      }
+      if (anchorOnly) {
+        return anchorEntry ?? const SizedBox.shrink();
+      }
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            likeBtn,
+            ?anchorEntry,
+          ],
+        ),
+      );
+    },
   );
 }
 
@@ -26,166 +229,11 @@ Future<void> showHongguoSocialDialog(
   BuildContext context,
   Drama drama,
   int episode,
-) => showDialog<void>(
-  context: context,
-  builder: (_) => _SocialDialog(drama: drama, episode: episode),
-);
-
-class _SocialDialog extends StatefulWidget {
-  const _SocialDialog({required this.drama, required this.episode});
-  final Drama drama;
-  final int episode;
-  @override
-  State<_SocialDialog> createState() => _SocialDialogState();
-}
-
-class _SocialDialogState extends State<_SocialDialog> {
+) async {
   final model = HongguoAccountSocial.shared;
-  String? error;
-  bool loading = true;
-  @override
-  void initState() {
-    super.initState();
-    _load();
+  if (!model.active) return;
+  final data = model.snapshot(drama);
+  if (data == null) {
+    await model.load(drama);
   }
-
-  Future<void> _load() async {
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    await _run(() => model.load(widget.drama));
-    if (mounted) setState(() => loading = false);
-  }
-
-  Future<void> _run(Future<void> Function() action) async {
-    try {
-      await action();
-      if (mounted) setState(() => error = null);
-    } catch (issue) {
-      if (mounted) {
-        setState(
-          () => error = issue is HongguoAccountFailure
-              ? issue.message
-              : '互动请求失败，请重试',
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: model,
-    builder: (context, _) {
-      final data = model.snapshot(widget.drama),
-          like = model.snapshot(widget.drama)?.episode(widget.episode);
-      final busy = model.busy(widget.drama) || loading;
-      return AlertDialog(
-        title: const Text('点赞与关注'),
-        content: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(widget.drama.title),
-                if (!model.active)
-                  const Text('请先登录红果账号')
-                else ...[
-                  if (loading) const LinearProgressIndicator(),
-                  if (error != null)
-                    Text(
-                      error!,
-                      key: const ValueKey('account-social-error'),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  if (data != null) ...[
-                    const SizedBox(height: 12),
-                    if (like != null)
-                      FilledButton.icon(
-                        key: const ValueKey('account-episode-like'),
-                        onPressed: busy
-                            ? null
-                            : () => _run(
-                                () =>
-                                    model.like(widget.drama, like, !like.liked),
-                              ),
-                        icon: Icon(
-                          like.liked ? Icons.favorite : Icons.favorite_border,
-                        ),
-                        label: Text(
-                          '第 ${like.number} 集 · ${like.liked ? "取消点赞" : "点赞"} · ${like.count}',
-                        ),
-                      )
-                    else
-                      Text('第 ${widget.episode} 集暂未提供点赞状态'),
-                    const SizedBox(height: 20),
-                    const Text(
-                      '创作者／演员',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    if (data.creatorError != null)
-                      Text('关注列表获取失败：${data.creatorError}')
-                    else if (data.creators.isEmpty)
-                      const Text('本剧暂无可关注的创作者账号'),
-                    for (final creator in data.creators)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                creator.name,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            OutlinedButton(
-                              key: ValueKey('account-creator-${creator.id}'),
-                              onPressed:
-                                  busy ||
-                                      creator.following == null ||
-                                      (!creator.canFollow &&
-                                          creator.following != true) ||
-                                      creator.id == model.service.session.id
-                                  ? null
-                                  : () => _run(
-                                      () => model.follow(
-                                        widget.drama,
-                                        creator,
-                                        !creator.following!,
-                                      ),
-                                    ),
-                              child: Text(
-                                creator.following == null
-                                    ? '状态不可用'
-                                    : creator.following!
-                                    ? '取消关注'
-                                    : '关注',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          if (model.active)
-            TextButton(onPressed: busy ? null : _load, child: const Text('刷新')),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
-          ),
-        ],
-      );
-    },
-  );
 }

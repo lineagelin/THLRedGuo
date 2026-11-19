@@ -115,6 +115,7 @@ class PlayerDialogHelper {
             section: section,
             accountActions: HongguoSocialButton(
               drama: detail.drama,
+              store: store,
               episode: detail.episodes.isEmpty
                   ? 1
                   : detail

@@ -12,6 +12,7 @@ import 'package:THLRedLook/views/remote/remote_widgets.dart';
 import 'package:THLRedLook/views/drama/drama_cover_view.dart';
 
 export 'package:THLRedLook/views/drama/drama_cover_view.dart';
+export 'mouse_horizontal_scroll.dart';
 
 Future<void> saveUserChange(
   BuildContext context,
@@ -114,6 +115,7 @@ class DramaTile extends StatelessWidget {
     this.onLongPress,
     this.heroTag,
     this.showCoverOverlay = true,
+    this.compact = false,
   });
   final Drama drama;
   final AppRepository repository;
@@ -128,31 +130,48 @@ class DramaTile extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? heroTag;
   final bool showCoverOverlay;
+  final bool compact;
 
-  static double titleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(
-        context,
-      ).scale(AppLayout.isTelevision(context) ? 17 : 14) *
-      2.6;
+  static double titleHeight(BuildContext context, {bool compact = false}) {
+    final television = AppLayout.isTelevision(context);
+    if (compact && !television) {
+      return MediaQuery.textScalerOf(context).scale(12.5) * 2.5;
+    }
+    return MediaQuery.textScalerOf(context).scale(television ? 17 : 14) * 2.6;
+  }
 
-  static double subtitleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(
-        context,
-      ).scale(AppLayout.isTelevision(context) ? 14 : 12) *
-      1.3;
+  static double subtitleHeight(BuildContext context, {bool compact = false}) {
+    final television = AppLayout.isTelevision(context);
+    if (compact && !television) {
+      return MediaQuery.textScalerOf(context).scale(11) * 1.25;
+    }
+    return MediaQuery.textScalerOf(context).scale(television ? 14 : 12) * 1.3;
+  }
 
-  static double extentFor(BuildContext context, double width) =>
-      (width * 1.5 + 13 + titleHeight(context) + subtitleHeight(context))
-          .ceilToDouble();
+  static double extentFor(
+    BuildContext context,
+    double width, {
+    bool compact = false,
+  }) {
+    final useCompact = compact && !AppLayout.isTelevision(context);
+    final coverHeight = useCompact ? width / 0.74 : width * 1.5;
+    final gaps = useCompact ? 7.0 : 13.0;
+    return (coverHeight +
+            gaps +
+            titleHeight(context, compact: useCompact) +
+            subtitleHeight(context, compact: useCompact))
+        .ceilToDouble();
+  }
 
   @override
   Widget build(BuildContext context) {
     final television = AppLayout.isTelevision(context);
+    final useCompact = compact && !television;
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AspectRatio(
-          aspectRatio: 2 / 3,
+          aspectRatio: useCompact ? 0.74 : 2 / 3,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -161,9 +180,9 @@ class DramaTile extends StatelessWidget {
                 child: DramaCover(
                   drama: drama,
                   repository: repository,
-                  radius: 14,
-                  showEpisodeCount: false,
+                  radius: useCompact ? 10 : 14,
                   showOverlay: showCoverOverlay,
+                  showEpisodeCount: badge == null || badge!.isEmpty,
                 ),
               ),
               if (badge != null && badge!.isNotEmpty)
@@ -217,32 +236,32 @@ class DramaTile extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 9),
+        SizedBox(height: useCompact ? 5 : 9),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: SizedBox(
-            height: titleHeight(context),
+            height: titleHeight(context, compact: useCompact),
             child: Text(
               drama.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                height: 1.3,
-                fontSize: television ? 17 : 14,
+                height: useCompact ? 1.25 : 1.3,
+                fontSize: television ? 17 : (useCompact ? 12.5 : 14),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        SizedBox(height: useCompact ? 2 : 4),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: SizedBox(
-            height: subtitleHeight(context),
+            height: subtitleHeight(context, compact: useCompact),
             child: DefaultTextStyle(
               style: TextStyle(
-                fontSize: television ? 14 : 12,
-                height: 1.3,
+                fontSize: television ? 14 : (useCompact ? 11 : 12),
+                height: useCompact ? 1.25 : 1.3,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               child: Row(
@@ -376,6 +395,24 @@ SliverGridDelegate dramaGridDelegate(
     mainAxisSpacing: 22,
     crossAxisSpacing: spacing,
     mainAxisExtent: DramaTile.extentFor(context, tileWidth),
+  );
+}
+
+SliverGridDelegate compactDramaGridDelegate(
+  BuildContext context,
+  double width,
+) {
+  final columns = width < 460
+      ? 3
+      : (width < 600 ? 4 : (width / 124).floor().clamp(5, 10));
+  final crossSpacing = width < 600 ? 8.0 : 12.0;
+  final mainSpacing = width < 600 ? 10.0 : 14.0;
+  final tileWidth = (width - (columns - 1) * crossSpacing) / columns;
+  return SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: columns,
+    mainAxisSpacing: mainSpacing,
+    crossAxisSpacing: crossSpacing,
+    mainAxisExtent: DramaTile.extentFor(context, tileWidth, compact: true),
   );
 }
 

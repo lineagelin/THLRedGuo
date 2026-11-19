@@ -37,6 +37,23 @@ final class HongguoAccountLoginService {
         phoneCodeSent = false
     }
 
+    private static func resolveNickname(profile: [String: Any], webProfile: [String: Any]?) -> String {
+        if let name = profile["user_name"] as? String, !name.isEmpty { return name }
+        if let name = profile["nickname"] as? String, !name.isEmpty { return name }
+        if let name = webProfile?["user_name"] as? String, !name.isEmpty { return name }
+        if let name = webProfile?["nickname"] as? String, !name.isEmpty { return name }
+        return "红果用户"
+    }
+
+    private static func resolveProfileId(profile: [String: Any], webProfile: [String: Any]?, cookies: [HongguoCookie]) -> String {
+        if let id = profile["id"] as? String, !id.isEmpty { return id }
+        if let id = profile["user_id"] as? String, !id.isEmpty { return id }
+        if let id = profile["biz_user_id"] as? String, !id.isEmpty { return id }
+        if let id = webProfile?["id"] as? String, !id.isEmpty { return id }
+        if let id = cookies.first(where: { ["uid_tt", "uid_tt_ss"].contains($0.name) && !$0.value.isEmpty })?.value { return id }
+        return ""
+    }
+
     func begin(
         attempt: Int,
         onUpdate: @escaping (String?, Int, Bool, String) -> Void,
@@ -58,13 +75,14 @@ final class HongguoAccountLoginService {
         loginTask = Task { @MainActor in
             let revision = vault.snapshot.revision
             do {
-                let (response, _, _) = try await transportService.call(
+                let (response, _, qrCookies) = try await transportService.call(
                     "qr",
                     owner: owner,
                     attempt: attempt,
                     account: nil,
                     cookies: cookies
                 )
+                if let qrCookies { self.cookies = qrCookies }
                 try transportService.check(owner: owner, attempt: attempt)
                 guard let value = response["qrUrl"] as? String,
                       let newToken = response["token"] as? String,
@@ -76,43 +94,71 @@ final class HongguoAccountLoginService {
                 onUpdate(value, max(0, Int(expiresAt.timeIntervalSinceNow)), false, "等待手机红果 App 扫码确认")
                 var tick = 0
                 var failures = 0
-                while expiresAt > Date() || cookies.contains(where: { $0.valid && ["sessionid", "sessionid_ss"].contains($0.name) }) {
+                var isConfirmed = false
+                while expiresAt.timeIntervalSinceNow > -30 || isConfirmed || HongguoAccountRecord(id: "", nickname: "", cookies: cookies).hasSession {
                     try transportService.check(owner: owner, attempt: attempt)
                     let remaining = max(0, Int(expiresAt.timeIntervalSinceNow))
-                    onUpdate(value, remaining, false, "等待手机红果 App 扫码确认")
+                    if !isConfirmed {
+                        onUpdate(value, remaining, false, "等待手机红果 App 扫码确认")
+                    }
                     try await Task.sleep(for: .seconds(1))
                     tick += 1
                     guard tick % 2 == 0 else { continue }
                     do {
-                        let hasSession = cookies.contains { $0.valid && ["sessionid", "sessionid_ss"].contains($0.name) }
-                        let state = hasSession ? [:] : try await transportService.call(
+                        let initialSession = HongguoAccountRecord(id: "", nickname: "", cookies: cookies).hasSession
+                        let pollCall = initialSession ? nil : try await transportService.call(
                             "poll",
                             payload: ["token": token],
                             owner: owner,
                             attempt: attempt,
                             account: nil,
                             cookies: cookies
-                        ).result
+                        )
+                        if let newCookies = pollCall?.updatedCookies {
+                            self.cookies = newCookies
+                        }
                         try transportService.check(owner: owner, attempt: attempt)
+                        let state = pollCall?.result ?? [:]
                         let status = state["status"] as? String ?? ""
                         transportService.trace(phase: "poll", status: status, account: nil, cookies: cookies)
-                        if ["5", "expired"].contains(status) { throw HongguoAccountError.expired }
+                        if !isConfirmed && ["5", "expired"].contains(status) { throw HongguoAccountError.expired }
                         if status == "cancelled" { throw HongguoAccountError.cancelled }
-                        if ["3", "confirmed"].contains(status), let redirect = state["redirect"] as? String, !redirect.isEmpty {
-                            try await transportService.finishRedirect(redirect, owner: owner, attempt: attempt, account: nil, cookies: cookies)
+                        if ["1", "2", "scanned"].contains(status) && !isConfirmed {
+                            onUpdate(value, remaining, false, "已扫码，请在手机上点击确认登录")
                         }
-                        if cookies.contains(where: { $0.valid && ["sessionid", "sessionid_ss"].contains($0.name) }) {
+                        if ["3", "4", "confirmed", "authorized"].contains(status) {
+                            isConfirmed = true
+                            onUpdate(value, remaining, true, "手机已确认，正在校验红果账号")
+                            if let redirect = state["redirect"] as? String, !redirect.isEmpty {
+                                if let redirectCookies = try? await transportService.finishRedirect(redirect, owner: owner, attempt: attempt, account: nil, cookies: cookies) {
+                                    self.cookies = redirectCookies
+                                }
+                            }
+                        }
+                        let sessionReady = HongguoAccountRecord(id: "", nickname: "", cookies: cookies).hasSession
+                        if sessionReady {
                             onUpdate(nil, 0, true, "手机已确认，正在校验红果账号")
-                            _ = try await transportService.call("webInfo", owner: owner, attempt: attempt, account: nil, cookies: cookies)
-                            let (profile, dev, _) = try await transportService.call("profile", owner: owner, attempt: attempt, account: nil, cookies: cookies)
+                            var webProfile: [String: Any]?
+                            if let webCall = try? await transportService.call("webInfo", owner: owner, attempt: attempt, account: nil, cookies: cookies) {
+                                if let webCookies = webCall.updatedCookies {
+                                    self.cookies = webCookies
+                                }
+                                webProfile = webCall.result
+                            }
+                            let profileCall = try? await transportService.call("profile", owner: owner, attempt: attempt, account: nil, cookies: cookies)
+                            if let profCookies = profileCall?.updatedCookies { self.cookies = profCookies }
+                            let profile = profileCall?.result ?? webProfile ?? [:]
+                            let dev = profileCall?.profileDevice ?? profileDevice
                             try transportService.check(owner: owner, attempt: attempt)
-                            guard let id = profile["id"] as? String, !id.isEmpty else { throw HongguoAccountError.invalid }
+                            let profileId = Self.resolveProfileId(profile: profile, webProfile: webProfile, cookies: cookies)
+                            guard !profileId.isEmpty else { throw HongguoAccountError.invalid }
+                            let resolvedNickname = Self.resolveNickname(profile: profile, webProfile: webProfile)
                             let record = HongguoAccountRecord(
-                                id: id,
-                                nickname: profile["nickname"] as? String ?? "红果用户",
+                                id: profileId,
+                                nickname: resolvedNickname,
                                 cookies: cookies,
-                                device: dev ?? profileDevice,
-                                avatar: profile["avatar"] as? String
+                                device: dev,
+                                avatar: profile["avatar"] as? String ?? profile["avatar_url"] as? String ?? webProfile?["avatar"] as? String
                             )
                             try vault.save(record, expectedRevision: revision)
                             releaseLoginResources()
@@ -121,6 +167,8 @@ final class HongguoAccountLoginService {
                             cookies = []
                             onSuccess(record)
                             return
+                        } else if isConfirmed {
+                            onUpdate(value, remaining, true, "手机已确认，正在同步登录会话...")
                         }
                         failures = 0
                     } catch {
@@ -128,11 +176,19 @@ final class HongguoAccountLoginService {
                         if let issue = error as? HongguoAccountError, issue == .expired || issue == .cancelled { throw issue }
                         transportService.trace(phase: stage, error: error, account: nil, cookies: cookies)
                         failures += 1
-                        onUpdate(value, remaining, false, "登录查询暂时失败，正在重试")
-                        if failures >= 3 { throw error }
+                        if !isConfirmed {
+                            onUpdate(value, remaining, false, "登录查询暂时失败，正在重试")
+                        } else {
+                            onUpdate(value, remaining, true, "正在校验红果账号，请稍候...")
+                        }
+                        if failures >= 8 { throw error }
                     }
                 }
-                throw HongguoAccountError.expired
+                if isConfirmed {
+                    throw HongguoAccountError.invalid
+                } else {
+                    throw HongguoAccountError.expired
+                }
             } catch {
                 if owner == attempt {
                     transportService.trace(phase: stage, error: error, account: nil, cookies: cookies)
@@ -185,19 +241,29 @@ final class HongguoAccountLoginService {
         if !phoneCodeSent { throw HongguoAccountError.preparation("SMS_REQUIRED") }
         let revision = vault.snapshot.revision
         do {
-            _ = try await transportService.call("phoneSms", payload: ["country": country, "number": number, "code": code], owner: owner, attempt: attempt, account: nil, cookies: cookies)
+            let (_, _, smsCookies) = try await transportService.call("phoneSms", payload: ["country": country, "number": number, "code": code], owner: owner, attempt: attempt, account: nil, cookies: cookies)
+            if let smsCookies { cookies = smsCookies }
             try transportService.check(owner: owner, attempt: attempt)
-            guard cookies.contains(where: { $0.valid && ["sessionid", "sessionid_ss"].contains($0.name) }) else { throw HongguoAccountError.invalid }
-            _ = try await transportService.call("webInfo", owner: owner, attempt: attempt, account: nil, cookies: cookies)
-            let (profile, dev, _) = try await transportService.call("profile", owner: owner, attempt: attempt, account: nil, cookies: cookies)
+            guard HongguoAccountRecord(id: "", nickname: "", cookies: cookies).hasSession else { throw HongguoAccountError.invalid }
+            var webProfile: [String: Any]?
+            if let webCall = try? await transportService.call("webInfo", owner: owner, attempt: attempt, account: nil, cookies: cookies) {
+                if let webCookies = webCall.updatedCookies { cookies = webCookies }
+                webProfile = webCall.result
+            }
+            let profileCall = try? await transportService.call("profile", owner: owner, attempt: attempt, account: nil, cookies: cookies)
+            if let profCookies = profileCall?.updatedCookies { cookies = profCookies }
+            let profile = profileCall?.result ?? webProfile ?? [:]
+            let dev = profileCall?.profileDevice ?? profileDevice
             try transportService.check(owner: owner, attempt: attempt)
-            guard let id = profile["id"] as? String else { throw HongguoAccountError.invalid }
+            let profileId = Self.resolveProfileId(profile: profile, webProfile: webProfile, cookies: cookies)
+            guard !profileId.isEmpty else { throw HongguoAccountError.invalid }
+            let resolvedNickname = Self.resolveNickname(profile: profile, webProfile: webProfile)
             let record = HongguoAccountRecord(
-                id: id,
-                nickname: profile["nickname"] as? String ?? "红果用户",
+                id: profileId,
+                nickname: resolvedNickname,
                 cookies: cookies,
-                device: dev ?? profileDevice,
-                avatar: profile["avatar"] as? String
+                device: dev,
+                avatar: profile["avatar"] as? String ?? profile["avatar_url"] as? String ?? webProfile?["avatar"] as? String
             )
             try vault.save(record, expectedRevision: revision)
             releaseLoginResources()

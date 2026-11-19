@@ -194,10 +194,9 @@ class Drama {
   final String category;
   String get displayCategory => dramaCategoryLabel(category);
   final bool? vipStatus;
-  bool get vip =>
-      (source == 'hongguo' || id.startsWith('hongguo:'))
-          ? false
-          : vipStatus == true;
+  bool get vip => (source == 'hongguo' || id.startsWith('hongguo:'))
+      ? false
+      : vipStatus == true;
   final String heat;
   final String views;
   final String onlineDate;
@@ -249,7 +248,8 @@ class Drama {
     if (!id.contains(':') && source.isNotEmpty && id.isNotEmpty) {
       id = '$source:$id';
     }
-    final isHongguo = source.isEmpty || source == 'hongguo' || id.startsWith('hongguo:');
+    final isHongguo =
+        source.isEmpty || source == 'hongguo' || id.startsWith('hongguo:');
     final tags = (json['tags'] as List? ?? const [])
         .whereType<String>()
         .map((t) => t.trim())
@@ -264,7 +264,11 @@ class Drama {
       cover: normalizeCoverUrl(json['cover'] as String? ?? ''),
       episodes: intValue(json['episodes']),
       category: category.isEmpty ? '' : dramaCategoryLabel(category),
-      vip: isHongguo ? false : (json['vip'] == true ? true : (json['vip'] == false ? false : null)),
+      vip: isHongguo
+          ? false
+          : (json['vip'] == true
+                ? true
+                : (json['vip'] == false ? false : null)),
       heat: json['heat']?.toString() ?? '',
       views: json['views']?.toString() ?? '',
       onlineDate: json['onlineDate'] as String? ?? '',
@@ -307,7 +311,9 @@ class Drama {
       id: id,
       source: fresh.source.isEmpty ? source : fresh.source,
       sourceId: fresh.sourceId.isEmpty ? sourceId : fresh.sourceId,
-      title: fresh.title.isEmpty || fresh.title == '短剧' ? title : fresh.title,
+      title: _isPlaceholderTitle(fresh.title) && !_isPlaceholderTitle(title)
+          ? title
+          : fresh.title,
       description: fresh.description.isEmpty ? description : fresh.description,
       cover: fresh.cover.isEmpty ? cover : fresh.cover,
       episodes: fresh.episodes > 0 ? fresh.episodes : episodes,
@@ -329,6 +335,13 @@ class Drama {
           : fresh.releaseStatus,
     );
   }
+
+  static bool _isPlaceholderTitle(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ||
+        trimmed == '短剧' ||
+        RegExp(r'^剧集\s*\d+$').hasMatch(trimmed);
+  }
 }
 
 bool _isVipOrPaidTag(String tag) {
@@ -348,7 +361,8 @@ class Episode {
       number = intValue(raw['currentEpisode']) > 0
           ? intValue(raw['currentEpisode'])
           : fallback,
-      vip = (raw['source'] == 'hongguo' ||
+      vip =
+          (raw['source'] == 'hongguo' ||
               (raw['id'] as String? ?? '').startsWith('hongguo:') ||
               (raw['url'] as String? ?? '').contains('hongguoduanju.com'))
           ? false
@@ -514,7 +528,8 @@ class WatchEntry {
     position: (json['position'] as num?)?.toDouble() ?? 0,
     duration: (json['duration'] as num?)?.toDouble() ?? 0,
     updatedAt:
-        DateTime.tryParse(json['updatedAt'].toString())?.toLocal() ?? DateTime(2000),
+        DateTime.tryParse(json['updatedAt'].toString())?.toLocal() ??
+        DateTime(2000),
   );
 }
 
@@ -588,4 +603,79 @@ List<Map<String, dynamic>> readJsonList(String? value) {
   } catch (_) {
     return [];
   }
+}
+
+class Anchor {
+  const Anchor({
+    required this.id,
+    required this.name,
+    this.avatar = '',
+    this.bio = '',
+    this.fansCount,
+    this.dramasCount,
+    this.isFollowed = false,
+    this.officialFollowing,
+    this.canFollow = false,
+    this.relativeType = 2,
+  });
+  final String id, name, avatar, bio;
+  final int? fansCount, dramasCount;
+  final bool isFollowed;
+  final bool? officialFollowing;
+  final bool canFollow;
+  final int relativeType;
+
+  Anchor copyWith({
+    String? id,
+    String? name,
+    String? avatar,
+    String? bio,
+    int? fansCount,
+    int? dramasCount,
+    bool? isFollowed,
+    bool? officialFollowing,
+    bool? canFollow,
+    int? relativeType,
+  }) => Anchor(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    avatar: avatar ?? this.avatar,
+    bio: bio ?? this.bio,
+    fansCount: fansCount ?? this.fansCount,
+    dramasCount: dramasCount ?? this.dramasCount,
+    isFollowed: isFollowed ?? this.isFollowed,
+    officialFollowing: officialFollowing ?? this.officialFollowing,
+    canFollow: canFollow ?? this.canFollow,
+    relativeType: relativeType ?? this.relativeType,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'avatar': avatar,
+    'bio': bio,
+    'fansCount': fansCount,
+    'dramasCount': dramasCount,
+    'isFollowed': isFollowed,
+  };
+  factory Anchor.fromJson(Map<String, dynamic> row) => Anchor(
+    id: row['id'] as String? ?? '',
+    name: row['name'] as String? ?? '',
+    avatar: row['avatar'] as String? ?? '',
+    bio: row['bio'] as String? ?? '',
+    fansCount: (row['fansCount'] as num?)?.toInt(),
+    dramasCount: (row['dramasCount'] as num?)?.toInt(),
+    isFollowed: row['isFollowed'] == true,
+  );
+  factory Anchor.fromOfficial(Map<String, dynamic> row) => Anchor(
+    id: row['id'] as String,
+    name: row['name'] as String? ?? '',
+    avatar: row['avatar'] as String? ?? '',
+    bio: row['description'] as String? ?? '',
+    dramasCount: (row['worksCount'] as num?)?.toInt(),
+    officialFollowing: row['following'] as bool?,
+    isFollowed: row['following'] == true,
+    canFollow: row['canFollow'] == true,
+    relativeType: (row['relativeType'] as num?)?.toInt() ?? 2,
+  );
 }

@@ -24,6 +24,7 @@ class PlaybackPreferences {
     this.enhancement = const VideoEnhancementPreferences(),
     this.decoderMode = PlaybackDecoderMode.hardware,
     this.playerTextScale = 1.0,
+    this.volume = 100.0,
   });
 
   final double speed;
@@ -36,6 +37,7 @@ class PlaybackPreferences {
   final VideoEnhancementPreferences enhancement;
   final PlaybackDecoderMode decoderMode;
   final double playerTextScale;
+  final double volume;
 
   PlaybackPreferences copyWith({
     double? speed,
@@ -48,6 +50,7 @@ class PlaybackPreferences {
     VideoEnhancementPreferences? enhancement,
     PlaybackDecoderMode? decoderMode,
     double? playerTextScale,
+    double? volume,
   }) => PlaybackPreferences(
     speed: speed ?? this.speed,
     quality: quality ?? this.quality,
@@ -59,6 +62,7 @@ class PlaybackPreferences {
     enhancement: enhancement ?? this.enhancement,
     decoderMode: decoderMode ?? this.decoderMode,
     playerTextScale: playerTextScale ?? this.playerTextScale,
+    volume: volume ?? this.volume,
   );
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +76,7 @@ class PlaybackPreferences {
     'enhancement': enhancement.toJson(),
     'decoderMode': decoderMode.name,
     'playerTextScale': playerTextScale,
+    'volume': volume,
   };
 
   factory PlaybackPreferences.fromJson(Map<String, dynamic> value) {
@@ -89,6 +94,10 @@ class PlaybackPreferences {
       (e) => e.name == decoderModeStr,
       orElse: () => PlaybackDecoderMode.hardware,
     );
+    final volume = (value['volume'] as num? ?? 100.0).toDouble().clamp(
+      0.0,
+      100.0,
+    );
     if (!playbackSpeeds.contains(speed) || quality < 0 || quality > 4320) {
       throw const FormatException('播放偏好无效');
     }
@@ -103,6 +112,7 @@ class PlaybackPreferences {
       enhancement: VideoEnhancementPreferences.fromJson(value['enhancement']),
       decoderMode: decoderMode,
       playerTextScale: 1.0,
+      volume: volume,
     );
   }
 }

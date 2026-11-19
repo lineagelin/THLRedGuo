@@ -110,6 +110,9 @@ public actor NativeBridge {
         let expression = try dramaParser.spiderExpression("accountParse", [action, body])
         context.exception = nil
         let result = context.evaluateScript(expression)
+        if let exc = context.exception {
+            NSLog("[Account] JS exception for %@: %@", action, exc.toString() ?? "")
+        }
         if context.exception?.toString()?.contains("ACCOUNT_CHALLENGE_REQUIRED") == true || context.exception?.toString()?.contains("ACCOUNT_SECONDARY_VERIFICATION_REQUIRED") == true { throw HongguoAccountError.challenge }
         if let message = context.exception?.toString(), let range = message.range(of: "ACCOUNT_BUSINESS_-?[0-9]{1,9}", options: .regularExpression),
            let code = Int(message[range].dropFirst("ACCOUNT_BUSINESS_".count)) {
@@ -118,7 +121,7 @@ public actor NativeBridge {
         }
         guard let result, context.exception == nil,
               let data = result.toDictionary() as? [String: Any] else {
-            throw ["socialDetail", "creatorList", "likeUpdate", "creatorFollow"].contains(action) ? HongguoAccountError.interactionInvalid : HongguoAccountError.invalid
+            throw ["socialDetail", "creatorList", "likeUpdate", "creatorFollow", "followingCreators", "creatorWorks", "likedVideos", "creatorProfile", "commentList", "commentReplyList"].contains(action) ? HongguoAccountError.interactionInvalid : HongguoAccountError.invalid
         }
         if data["verification"] != nil { throw HongguoAccountError.challenge }
         return data

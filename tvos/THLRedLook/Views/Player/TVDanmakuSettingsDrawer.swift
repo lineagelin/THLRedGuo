@@ -20,22 +20,21 @@ public struct TVDanmakuSettingsDrawer: View {
 
             VStack(alignment: .leading, spacing: 28) {
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("弹幕设置")
-                            .font(.title2)
-                            .bold()
+                            .font(.system(size: 34, weight: .bold))
                             .foregroundColor(TVColors.textPrimary)
                         Text("个性化调整弹幕大小、透明度与展示区域")
-                            .font(.subheadline)
+                            .font(.system(size: 20))
                             .foregroundColor(TVColors.textSecondary)
                     }
                     Spacer()
                     Text("按 Menu 返回")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(TVColors.textSecondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.08))
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.12))
                         .clipShape(Capsule())
                 }
                 .padding(.bottom, 8)
@@ -44,9 +43,9 @@ public struct TVDanmakuSettingsDrawer: View {
                     .background(TVColors.borderSubtle)
 
                 // 1. 弹幕总开关
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text("弹幕显示")
-                        .font(.headline)
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundColor(TVColors.textSecondary)
                     HStack(spacing: 16) {
                         settingOptionButton(
@@ -71,9 +70,9 @@ public struct TVDanmakuSettingsDrawer: View {
                 }
 
                 // 2. 字体大小
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text("字体大小")
-                        .font(.headline)
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundColor(TVColors.textSecondary)
                     HStack(spacing: 16) {
                         settingOptionButton(
@@ -111,9 +110,9 @@ public struct TVDanmakuSettingsDrawer: View {
                 }
 
                 // 3. 不透明度
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text("不透明度")
-                        .font(.headline)
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundColor(TVColors.textSecondary)
                     HStack(spacing: 16) {
                         settingOptionButton(
@@ -151,9 +150,9 @@ public struct TVDanmakuSettingsDrawer: View {
                 }
 
                 // 4. 显示区域
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text("显示区域")
-                        .font(.headline)
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundColor(TVColors.textSecondary)
                     HStack(spacing: 16) {
                         settingOptionButton(
@@ -161,7 +160,6 @@ public struct TVDanmakuSettingsDrawer: View {
                             isSelected: viewModel.danmakuStyle.laneCount == 4,
                             id: "danmaku.area.half",
                             up: "danmaku.opacity.50",
-                            down: "danmaku.close",
                             right: "danmaku.area.full"
                         ) {
                             viewModel.setDanmakuLaneCount(4)
@@ -171,7 +169,6 @@ public struct TVDanmakuSettingsDrawer: View {
                             isSelected: viewModel.danmakuStyle.laneCount == 8,
                             id: "danmaku.area.full",
                             up: "danmaku.opacity.100",
-                            down: "danmaku.close",
                             left: "danmaku.area.half"
                         ) {
                             viewModel.setDanmakuLaneCount(8)
@@ -180,28 +177,6 @@ public struct TVDanmakuSettingsDrawer: View {
                 }
 
                 Spacer()
-
-                Button(action: {
-                    isPresented = false
-                }) {
-                    Text("完成设置")
-                        .font(.system(size: 20, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(focusedButton == "danmaku.close" ? TVColors.primaryHover : TVColors.primary)
-                        )
-                        .foregroundColor(.white)
-                        .tvFocusBorder(isFocused: focusedButton == "danmaku.close", cornerRadius: 14)
-                }
-                .buttonStyle(TVZeroHighlightButtonStyle())
-                .focused($focusedButton, equals: "danmaku.close")
-                .accessibilityIdentifier("danmaku.close")
-                .focusEffectDisabled()
-                .onMoveCommand { dir in
-                    if dir == .up { focusedButton = "danmaku.area.half" }
-                }
             }
             .padding(40)
             .frame(width: 720)
@@ -234,23 +209,23 @@ public struct TVDanmakuSettingsDrawer: View {
     ) -> some View {
         let isFocused = (focusedButton == id)
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 20, weight: .heavy))
                     .opacity(isSelected ? 1.0 : 0.0)
                 Text(title)
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 18)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected
                           ? (isFocused ? TVColors.primaryHover : TVColors.primary)
                           : (isFocused ? TVColors.surfaceFocused : TVColors.surfaceCard))
             )
             .foregroundColor(TVColors.textPrimary)
-            .tvFocusBorder(isFocused: isFocused, cornerRadius: 12)
+            .tvFocusBorder(isFocused: isFocused, cornerRadius: 14)
         }
         .buttonStyle(TVZeroHighlightButtonStyle())
         .focused($focusedButton, equals: id)

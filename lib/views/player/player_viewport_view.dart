@@ -85,6 +85,7 @@ class PlayerViewportView extends StatelessWidget {
     this.onRestorePictureInPicture,
     required this.onTelevisionEpisodes,
     required this.onTelevisionSettings,
+    this.onComments,
     this.onFetchDiagnostics,
     this.topPadding = 0.0,
     this.danmakuTopInset = 0.0,
@@ -92,6 +93,7 @@ class PlayerViewportView extends StatelessWidget {
 
   final double topPadding;
   final double danmakuTopInset;
+  final VoidCallback? onComments;
   final Future<PlaybackTechnicalDiagnostics?> Function()? onFetchDiagnostics;
   final bool television;
   final bool fullscreen;
@@ -333,6 +335,7 @@ class PlayerViewportView extends StatelessWidget {
             danmakuEnabled: danmakuEnabled,
             danmakuStatus: danmaku.status,
             onEpisodes: () => onOpenPanel(PlayerMenuSection.episodes),
+            onComments: onComments != null ? () async => onComments!() : null,
             onSpeed: () => onOpenPanel(PlayerMenuSection.speed),
             onQuality: () => onOpenPanel(PlayerMenuSection.quality),
             onDanmaku: detail.drama.source == 'hongguo'

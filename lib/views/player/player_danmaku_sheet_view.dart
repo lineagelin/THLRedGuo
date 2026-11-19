@@ -7,7 +7,7 @@ import 'package:THLRedLook/views/player/player_danmaku_blocked_words_sheet.dart'
 class PlayerDanmakuSheetView extends StatefulWidget {
   const PlayerDanmakuSheetView({
     super.key,
-    required this.enabled,
+    this.enabled = true,
     required this.style,
     required this.onEnabledChanged,
     required this.onStyleChanged,
@@ -20,7 +20,7 @@ class PlayerDanmakuSheetView extends StatefulWidget {
 
   static Future<void> show({
     required BuildContext context,
-    required bool enabled,
+    bool enabled = true,
     required DanmakuStyle style,
     required Future<void> Function(bool) onEnabledChanged,
     required Future<void> Function(DanmakuStyle) onStyleChanged,

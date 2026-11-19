@@ -1229,59 +1229,61 @@ class _HomeScreenState extends State<HomeScreen> {
           (5, Icons.person_outline_rounded, Icons.person_rounded, '我的'),
         ];
         final navIndex = destinations.indexWhere((item) => item.$1 == _tab);
-        final scaffold = Scaffold(
-          extendBodyBehindAppBar: _tab == 4,
-          appBar: _tab == 4 && _feed.cleanScreen
-              ? null
-              : HomeAppBarView(
-                  selectionMode: _tab == 0 && _selectionMode,
-                  selectedEmpty: _selectedDramas.isEmpty,
-                  tab: _tab,
-                  sourceGroups: _sourceGroups,
-                  group: _group,
-                  showRecommendations: _showRecommendations,
-                  searchVisible: _searchVisible,
-                  television: television,
-                  canDownload: widget.store.canDownload,
-                  supportsDownloads: widget.repository.supportsDownloads,
-                  supportsSourceManagement:
-                      widget.repository.supportsSourceManagement,
-                  sourcesEmpty: _hasNoSourcePlugins,
-                  loading: _loading || _loadingMore || _categoriesLoading,
-                  catalogSortLabel: widget.store.catalogView.sort.label,
-                  isSortedOrFiltered:
-                      widget.store.catalogView.sort != CatalogSort.source ||
-                      widget.store.catalogView.release.isNotEmpty,
-                  screenWidth: constraints.maxWidth,
-                  onClearSelection: () => setState(_selectedDramas.clear),
-                  onCancelSelection: _cancelSelection,
-                  onChangeGroup: _changeGroup,
-                  onChooseCatalogView: _chooseCatalogView,
-                  onOpenRankings: _openRankings,
-                  onStartSelection: () => setState(() => _selectionMode = true),
-                  onToggleSearch: () {
-                    if (_tab == 4) {
-                      _onNavSelected(0);
-                      if (!_searchVisible) _toggleSearch();
-                    } else {
-                      _toggleSearch();
-                    }
-                  },
-                  onFeedRefresh: () => unawaited(_feed.refresh()),
-                  onFeedMenu: () => unawaited(
-                    _feed.openPlayerMenu?.call() ?? Future<void>.value(),
+        final scaffold = Container(
+          decoration: BoxDecoration(
+            gradient: Theme.of(context).brightness == Brightness.dark
+                ? AppGradients.darkAtmosphere
+                : null,
+          ),
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            extendBodyBehindAppBar: _tab == 4,
+            appBar: _tab == 4 && _feed.cleanScreen
+                ? null
+                : HomeAppBarView(
+                    selectionMode: _tab == 0 && _selectionMode,
+                    selectedEmpty: _selectedDramas.isEmpty,
+                    tab: _tab,
+                    sourceGroups: _sourceGroups,
+                    group: _group,
+                    showRecommendations: _showRecommendations,
+                    searchVisible: _searchVisible,
+                    television: television,
+                    canDownload: widget.store.canDownload,
+                    supportsDownloads: widget.repository.supportsDownloads,
+                    supportsSourceManagement:
+                        widget.repository.supportsSourceManagement,
+                    sourcesEmpty: _hasNoSourcePlugins,
+                    loading: _loading || _loadingMore || _categoriesLoading,
+                    catalogSortLabel: widget.store.catalogView.sort.label,
+                    isSortedOrFiltered:
+                        widget.store.catalogView.sort != CatalogSort.source ||
+                        widget.store.catalogView.release.isNotEmpty,
+                    screenWidth: constraints.maxWidth,
+                    onClearSelection: () => setState(_selectedDramas.clear),
+                    onCancelSelection: _cancelSelection,
+                    onChangeGroup: _changeGroup,
+                    onChooseCatalogView: _chooseCatalogView,
+                    onOpenRankings: _openRankings,
+                    onStartSelection: () =>
+                        setState(() => _selectionMode = true),
+                    onToggleSearch: () {
+                      if (_tab == 4) {
+                        _onNavSelected(0);
+                        if (!_searchVisible) _toggleSearch();
+                      } else {
+                        _toggleSearch();
+                      }
+                    },
+                    onFeedRefresh: () => unawaited(_feed.refresh()),
+                    onFeedMenu: () => unawaited(
+                      _feed.openPlayerMenu?.call() ?? Future<void>.value(),
+                    ),
+                    onRefreshCatalog: _refreshCatalog,
+                    onMoreAction: _handleHomeMoreAction,
+                    onOpenSourceSwitcher: _openSourceSwitcher,
                   ),
-                  onRefreshCatalog: _refreshCatalog,
-                  onMoreAction: _handleHomeMoreAction,
-                  onOpenSourceSwitcher: _openSourceSwitcher,
-                ),
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: Theme.of(context).brightness == Brightness.dark
-                  ? AppGradients.darkAtmosphere
-                  : null,
-            ),
-            child: SafeArea(
+            body: SafeArea(
               top: false,
               child: Row(
                 children: [
@@ -1376,24 +1378,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            bottomNavigationBar: desktop || television
+                ? null
+                : _selectionMode
+                ? _selectionBar()
+                : AppBottomNavigation(
+                    selectedIndex: navIndex,
+                    onDestinationSelected: (index) =>
+                        _onNavSelected(destinations[index].$1),
+                    destinations: [
+                      for (final item in destinations)
+                        NavigationDestination(
+                          icon: Icon(item.$2),
+                          selectedIcon: Icon(item.$3),
+                          label: item.$4,
+                        ),
+                    ],
+                  ),
           ),
-          bottomNavigationBar: desktop || television
-              ? null
-              : _selectionMode
-              ? _selectionBar()
-              : AppBottomNavigation(
-                  selectedIndex: navIndex,
-                  onDestinationSelected: (index) =>
-                      _onNavSelected(destinations[index].$1),
-                  destinations: [
-                    for (final item in destinations)
-                      NavigationDestination(
-                        icon: Icon(item.$2),
-                        selectedIcon: Icon(item.$3),
-                        label: item.$4,
-                      ),
-                  ],
-                ),
         );
         if (!television && !_selectionMode) return scaffold;
         return PopScope(

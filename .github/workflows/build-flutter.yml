@@ -122,7 +122,8 @@ jobs:
             echo "== $(basename "$apk")"
             output=$("$apksigner" verify --print-certs "$apk" 2>&1 || true)
             printf '%s\n' "$output"
-            if ! printf '%s' "$output" | tr -d ':' | tr '[:upper:]' '[:lower:]' | grep -q "$expected"; then
+            clean_output=$(printf '%s' "$output" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+            if [[ "$clean_output" != *"$expected"* ]]; then
               echo "签名证书与发布证书不一致，已终止。" >&2
               exit 1
             fi
@@ -177,10 +178,14 @@ jobs:
   ios:
     name: iOS 平台自动化打包
     if: inputs.target_platform == null || inputs.target_platform == 'all' || inputs.target_platform == 'ios'
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: 检查 Xcode 与 iOS SDK 版本
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -293,10 +298,14 @@ jobs:
   macos:
     name: macOS 平台自动化打包
     if: inputs.target_platform == null || inputs.target_platform == 'all' || inputs.target_platform == 'macos'
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: 检查 Xcode 与 macOS SDK 版本
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i macosx || true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -540,6 +549,10 @@ jobs:
             printf '\n%s\n' "#### 📺 Apple tvOS (大屏原生客厅端)"
             printf -- '- [THLRedLook-1.0.0-tvos-signed.ipa](%s/THLRedLook-1.0.0-tvos-signed.ipa)（已签名 tvOS 原生大屏安装包）\n' "$base_url"
             printf -- '- [THLRedLook-1.0.0-tvos-unsigned.ipa](%s/THLRedLook-1.0.0-tvos-unsigned.ipa)（tvOS 未签名自签包）\n' "$base_url"
+
+            # 保持 HarmonyOS NEXT 链接说明
+            printf '\n%s\n' "#### 🔴 HarmonyOS NEXT (华为纯血鸿蒙原生)"
+            printf -- '- [THLRedLook-1.0.0-harmonyos-signed.hap](%s/THLRedLook-1.0.0-harmonyos-signed.hap)（HarmonyOS NEXT 原生已签名 HAP 安装包）\n' "$base_url"
 
             printf '\n%s\n' "---"
             printf '%s\n' "### 🔒 安全校验与哈希"

@@ -3,7 +3,6 @@ import AVKit
 
 public struct TVPlayerView: View {
     @ObservedObject private var accountLibrary = HongguoAccountModel.shared
-    @State private var showingAccountSocial = false
     @StateObject private var viewModel: PlayerViewModel
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.scenePhase) private var scenePhase
@@ -35,6 +34,7 @@ public struct TVPlayerView: View {
         initialShowControls: Bool = false,
         keepControlsVisible: Bool = false,
         initialShowDrawer: Bool = false,
+        initialShowCommentDrawer: Bool = false,
         initialRestoreFocusTarget: PlayerOverlayFocusTarget? = nil,
         onDismiss: (() -> Void)? = nil,
         onSwitchSeason: ((Drama) -> Void)? = nil,
@@ -58,6 +58,7 @@ public struct TVPlayerView: View {
             initialShowControls: initialShowControls,
             keepControlsVisible: keepControlsVisible,
             initialShowDrawer: initialShowDrawer,
+            initialShowCommentDrawer: initialShowCommentDrawer,
             initialRestoreFocusTarget: initialRestoreFocusTarget,
             preloadedPlan: preloadedPlan,
             isFeedMode: feedActions != nil
@@ -191,9 +192,6 @@ public struct TVPlayerView: View {
                 )
             }
         }
-        .sheet(isPresented: $showingAccountSocial, onDismiss: { viewModel.showControls() }) {
-            TVAccountSocialSheet(drama: viewModel.drama, episode: viewModel.currentEpisodeIndex)
-        }
     }
 
     // MARK: - 子视图组件拆解
@@ -288,7 +286,7 @@ public struct TVPlayerView: View {
     @ViewBuilder
     private var controlsOverlayView: some View {
         if viewModel.isControlsVisible && (viewModel.errorMessage == nil || viewModel.keepControlsVisible) && !viewModel.isEpisodeDrawerVisible && !viewModel.isDanmakuSettingsVisible && !viewModel.isSpeedSheetVisible && !viewModel.isQualitySheetVisible {
-            TVPlayerControlsOverlay(viewModel: viewModel, forceFocusPlayButton: viewModel.keepControlsVisible, feedActions: playerFeedActions, onSocial: HongguoAccountModel.shared.loggedIn && viewModel.drama.source == "hongguo" ? { showingAccountSocial = true } : nil) {
+            TVPlayerControlsOverlay(viewModel: viewModel, forceFocusPlayButton: viewModel.keepControlsVisible, feedActions: playerFeedActions) {
                 handleExit()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -388,6 +386,9 @@ public struct TVPlayerView: View {
             viewModel.showControls()
         } else if viewModel.isSpeedSheetVisible {
             withAnimation(.easeInOut(duration: 0.2)) { viewModel.isSpeedSheetVisible = false }
+            viewModel.showControls()
+        } else if viewModel.isCommentDrawerVisible {
+            withAnimation(.easeInOut(duration: 0.2)) { viewModel.isCommentDrawerVisible = false }
             viewModel.showControls()
         } else if viewModel.isEpisodeDrawerVisible {
             withAnimation(.easeInOut(duration: 0.2)) { viewModel.isEpisodeDrawerVisible = false }
